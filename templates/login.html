@@ -1,0 +1,14 @@
+{{define "title"}}Login – Shift Scheduler{{end}}
+
+{{define "content"}}
+  <h2>Login</h2>
+  <form method="post" action="/login" style="max-width:300px">
+    <label>Username<br>
+      <input type="text" name="username" autocomplete="username" style="width:100%;padding:.5rem;margin:.25rem 0">
+    </label>
+    <label>Password<br>
+      <input type="password" name="password" autocomplete="current-password" style="width:100%;padding:.5rem;margin:.25rem 0">
+    </label>
+    <button style="margin-top:1rem;padding:.5rem 1rem">Sign In</button>
+  </form>
+{{end}}

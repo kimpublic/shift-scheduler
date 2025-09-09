@@ -1,0 +1,44 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>{{block "title" .}}Shift Scheduler{{end}}</title>
+
+  <!-- IBM Plex Sans 로드 -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,100..700;1,100..700&display=swap" rel="stylesheet">
+
+  <style>
+    body {
+      margin: 0;
+      font-family: "IBM Plex Sans", Helvetica, Arial, sans-serif;
+      background: #ffffff;
+    }
+    header {
+      display: flex;
+      align-items: center;
+      padding: 1rem 2rem;
+      background-color: #002E5D;
+      color: white;
+    }
+    header img {
+      height: 40px;
+      margin-right: 1rem;
+    }
+    main {
+      padding: 2rem;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <img src="/static/byu-logo.png" alt="BYU">
+    <h1>Shift Scheduler</h1>
+  </header>
+
+  <main>
+    {{block "content" .}}{{end}}
+  </main>
+</body>
+</html>

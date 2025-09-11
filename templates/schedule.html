@@ -1,18 +1,510 @@
-{{define "title"}}대시보드{{end}}
+{{define "title"}}Schedule – Shift Scheduler{{end}}
 
 {{define "content"}}
-  <div class="container">
-    <h1>대시보드</h1>
-    <p class="muted">User login screen</p>
+<style>
+  /* 레이아웃 */
+  .page {
+    display: grid;
+    grid-template-columns: 1fr 320px;
+    gap: 1.5rem;
+  }
+  .card {
+    background: #fff;
+    border: 1px solid #e7e7e7;
+    border-radius: 10px;
+    box-shadow: 0 1px 2px rgba(0,0,0,.04);
+  }
+  .card .body { padding: 1rem 1.25rem; }
 
-    <!-- 데모용 사용자 정보 표시 (선택) -->
-    {{if .User}}
-      <p style="color:#555">안녕하세요, <strong>{{.User}}</strong>님 (role: {{.Role}})</p>
-    {{end}}
+  /* 상태 배너 (초기: draft) */
+  .status-banner {
+    margin-bottom: 1rem;
+    padding: .75rem 1rem;
+    border-radius: 8px;
+    background: #eef5ff;
+    color: #002E5D;
+    font-weight: 600;
+  }
 
-    <!-- 로그아웃: base에도 버튼 있지만, 본문에도 하나 두고 싶다면 -->
-    <form method="post" action="/logout" hx-post="/logout" hx-redirect="/" style="margin-top:1rem">
-      <button type="submit">로그아웃</button>
-    </form>
-  </div>
+  /* 시간 그리드 컨테이너 */
+  .week {
+    padding: 1rem 1.25rem 1.5rem;
+  }
+  .week .header {
+    display: grid;
+    grid-template-columns: 100px repeat(10, 1fr); /* Day label + 10시간 */
+    gap: 0;
+    font-weight: 600;
+    color: #333;
+  }
+  .week .header div {
+    padding: .25rem .5rem;
+    font-size: .9rem;
+  }
+  .week .header .label { color: #555; }
+
+  /* 요일 행 */
+  .day-row {
+    display: grid;
+    grid-template-columns: 100px 1fr; /* 라벨 + 시간영역 */
+    align-items: stretch;
+  }
+  .day-row .label {
+    padding: .5rem .5rem;
+    border-top: 1px solid #eee;
+    border-right: 1px solid #eee;
+    font-weight: 600;
+    color: #444;
+    background: #fafafa;
+  }
+  .day-row .hours {
+    position: relative;
+    border-top: 1px solid #eee;
+    min-height: 48px; /* 기본 높이 */
+    /* 10분 가이드: 전체 폭을 60등분(10시간 × 6)하여 얇은 세로 라인 */
+    background-image:
+      /* 1시간 굵은 라인(10등분) */
+      linear-gradient(to right, rgba(0,0,0,.12) 0, rgba(0,0,0,.12) 1px, transparent 1px),
+      /* 10분 가이드(60등분) */
+      repeating-linear-gradient(to right,
+        rgba(0,0,0,.08) 0 1px,
+        transparent 1px calc(100%/60)
+      );
+    background-size:
+      calc(100%/10) 100%, /* 시간 라인 간격 */
+      100% 100%;          /* 10분 가이드 전체 적용 */
+    background-position:
+      left top,
+      left top;
+    background-repeat: repeat no-repeat;
+  }
+  /* 시간 머리글(8~17라벨) 아래의 1시간 경계선과 얼라인을 맞추기 위해 padding */
+  .hours::before { content: ""; display: block; height: 0; }
+
+  /* 폼과 토탈 패널 */
+  .form-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr) auto;
+    gap: .75rem;
+    margin-top: 1rem;
+  }
+  .form-grid label { display: block; font-size: .85rem; color: #333; margin-bottom: .35rem; }
+  .form-grid select, .form-grid button {
+    width: 100%; padding: .5rem; border: 1px solid #ddd; border-radius: 8px; background: #fff;
+    font-family: inherit;
+  }
+  .form-grid button { background: #002E5D; color: #fff; cursor: pointer; font-weight: 600; }
+
+  .totals h3 { margin: 0 0 .5rem 0; font-size: 1rem; }
+  .totals .list { display: grid; gap: .5rem; }
+  .totals .row { display: flex; justify-content: space-between; font-size: .95rem; }
+  .totals .weekly { margin-top: .75rem; padding-top: .75rem; border-top: 1px dashed #ddd; font-weight: 700; }
+
+  /* 작은 화면 대응 */
+  @media (max-width: 900px) {
+    .page { grid-template-columns: 1fr; }
+  }
+
+   /* 선택 슬롯(10분 단위) */
+  .hours { position: relative; } /* 이미 있음: 안전하게 유지 */
+  .hours .slot {
+    position: absolute;
+    top: 0; bottom: 0;
+    background: #002E5D;
+    /* 시각적으로 그리드 위에 올라오도록 */
+    z-index: 1;
+    /* 접근성 향상용(포커스 테두리 등 필요시) */
+    outline: none;
+  }
+
+  #validation-banner {
+  background: #fff0f0;
+  color: #b00020;
+  /* 한 줄 + 패딩 기준으로 높이 고정 (상황에 맞게 40~48px 조정 가능) */
+  min-height: 44px;
+  display: block;          /* 항상 블록(자리 차지) */
+  visibility: hidden;      /* 기본은 숨김(자리 유지) */
+  opacity: 0;              /* 기본은 투명 */
+  transition: opacity 120ms ease-in;
+  margin-bottom: 1rem;     /* 아래 콘텐츠와 간격 유지 */
+  white-space: nowrap;     /* 한 줄 유지(길면 … 처리) */
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 에러 있을 때만 보이게 */
+#validation-banner.show {
+  visibility: visible;
+  opacity: 1;
+}
+
+</style>
+
+<div class="page">
+  <!-- 좌측: 스케줄 편집 영역 -->
+  <section class="card">
+    <div class="body">
+      <div class="status-banner" id="status-banner">Status: Draft</div>
+      <div class="status-banner validation" id="validation-banner" aria-live="polite"></div>
+
+      <!-- 시간 그리드 헤더 -->
+      <div class="week">
+        <div class="header">
+          <div class="label">Day</div>
+          <div>8:00</div><div>9:00</div><div>10:00</div><div>11:00</div><div>12:00</div>
+          <div>1:00</div><div>2:00</div><div>3:00</div><div>4:00</div><div>5:00</div>
+        </div>
+
+        <!-- 요일 행들: 10분 가이드는 .hours 영역 배경으로 시각화 -->
+        <div class="day-row">
+          <div class="label">Mon</div>
+          <div class="hours"></div>
+        </div>
+        <div class="day-row">
+          <div class="label">Tue</div>
+          <div class="hours"></div>
+        </div>
+        <div class="day-row">
+          <div class="label">Wed</div>
+          <div class="hours"></div>
+        </div>
+        <div class="day-row">
+          <div class="label">Thu</div>
+          <div class="hours"></div>
+        </div>
+        <div class="day-row">
+          <div class="label">Fri</div>
+          <div class="hours"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 우측: 합계 패널 -->
+  <aside class="card totals">
+    <div class="body">
+      <h3>Totals</h3>
+      <div class="list">
+        <div class="row"><span>Mon</span><span>0h 0m</span></div>
+        <div class="row"><span>Tue</span><span>0h 0m</span></div>
+        <div class="row"><span>Wed</span><span>0h 0m</span></div>
+        <div class="row"><span>Thu</span><span>0h 0m</span></div>
+        <div class="row"><span>Fri</span><span>0h 0m</span></div>
+      </div>
+      <div class="weekly row"><span>Weekly Total</span><span>0h 0m</span></div>
+
+      <!-- 제출/리셋 자리(V1에선 비활성) -->
+      <form id="schedule-form" hx-post="/schedule/submit" hx-target="#status-banner" hx-swap="outerHTML">
+        <input type="hidden" name="schedule_json" id="schedule-json" />
+        <div style="margin-top:1rem; display:flex; gap:.5rem;">
+          <button type="submit" id="btn-submit" disabled>Submit for Approval</button>
+          <button type="button" id="btn-reset">Reset</button>
+        </div>
+      </form>
+
+    </div>
+  </aside>
+</div>
+<script>
+(function () {
+  // ----- 설정 -----
+  const SLOTS_PER_DAY = 60;          // 8:00~18:00, 10분 단위
+  const DAY_START_MIN = 8 * 60;      // 8:00 = 480분
+  const MIN_SHIFT_MIN = 3 * 60;      // 최소 3시간
+  const MAX_DAILY_MIN = 9 * 60;      // 하루 최대 9시간
+  const MIN_WEEKLY_MIN = 20 * 60;    // 주 20시간
+  const MAX_WEEKLY_MIN = 40 * 60;    // 주 40시간
+
+  const DAY_ROWS = Array.from(document.querySelectorAll('.day-row')); // Mon~Fri
+  const TOTAL_ROWS = Array.from(document.querySelectorAll('.totals .list .row'));
+  const WEEKLY_TOTAL_SPAN = document.querySelector('.totals .weekly span:last-child');
+  const VALID_BANNER = document.getElementById('validation-banner');
+  const SUBMIT_BTN = document.getElementById('btn-submit');
+  const RESET_BTN = document.getElementById('btn-reset');
+  const FORM = document.getElementById('schedule-form');
+  const JSON_INPUT = document.getElementById('schedule-json');
+
+  // ----- 유틸 -----
+  const fmt = (min) => `${Math.floor(min / 60)}h ${min % 60}m`;
+  const pad2 = (n) => (n < 10 ? '0' + n : '' + n);
+  function indexToTime(idx) {
+    const total = DAY_START_MIN + idx * 10;
+    const h = Math.floor(total / 60);
+    const m = total % 60;
+    return `${pad2(h)}:${pad2(m)}`;
+  }
+  function getDayLabel(row) {
+    const t = row.querySelector('.label')?.textContent?.trim() || '';
+    return t; // 'Mon' 등
+  }
+  function getHoursEl(row) {
+    return row.querySelector('.hours');
+  }
+  function getSelectedIndices(hoursEl) {
+    return Array.from(hoursEl.querySelectorAll('.slot'))
+      .map(el => parseInt(el.dataset.slot, 10))
+      .filter(Number.isFinite)
+      .sort((a,b)=>a-b);
+  }
+  // 연속 슬롯을 구간으로 변환
+  function indicesToIntervals(indices) {
+    const out = [];
+    if (!indices.length) return out;
+    let start = indices[0];
+    let prev = indices[0];
+    for (let i = 1; i < indices.length; i++) {
+      const idx = indices[i];
+      if (idx === prev + 1) {
+        prev = idx;
+        continue;
+      }
+      // [start, prev]까지가 한 구간(끝은 prev+1로 취급)
+      out.push([start, prev + 1]);
+      start = idx;
+      prev = idx;
+    }
+    out.push([start, prev + 1]);
+    return out;
+  }
+  function intervalsToPayload(intervals) {
+    // [{startIdx,endIdx}] -> [{start:"HH:MM", end:"HH:MM", minutes}]
+    return intervals.map(([s, e]) => {
+      const minutes = (e - s) * 10;
+      return { start: indexToTime(s), end: indexToTime(e), minutes };
+    });
+  }
+
+  // ----- 합계 -----
+  function recalcTotals() {
+    let weeklyMin = 0;
+    DAY_ROWS.forEach((row, i) => {
+      const hoursEl = getHoursEl(row);
+      const mins = hoursEl.querySelectorAll('.slot').length * 10;
+      weeklyMin += mins;
+      const rightSpan = TOTAL_ROWS[i]?.querySelector('span:last-child');
+      if (rightSpan) rightSpan.textContent = fmt(mins);
+    });
+    if (WEEKLY_TOTAL_SPAN) WEEKLY_TOTAL_SPAN.textContent = fmt(weeklyMin);
+  }
+
+  // ----- 스케줄 JSON 생성 -----
+  function buildSchedule() {
+    let weeklyMin = 0;
+    const days = DAY_ROWS.map((row) => {
+      const day = getDayLabel(row);
+      const hoursEl = getHoursEl(row);
+      const indices = getSelectedIndices(hoursEl);
+      const intervalsIdx = indicesToIntervals(indices);
+      const intervals = intervalsToPayload(intervalsIdx);
+      const totalMinutes = indices.length * 10;
+      weeklyMin += totalMinutes;
+      return { day, intervals, totalMinutes };
+    });
+    return { days, weeklyTotalMinutes: weeklyMin };
+  }
+
+  // ----- 프론트 유효성 검사 -----
+  function validateSchedule(schedule) {
+    const errors = [];
+
+    let hasShortShift = false;     // 3시간 미만 구간 존재 여부
+    let hasOverDailyMax = false;   // 하루 총 9시간 초과 존재 여부
+
+    for (const d of schedule.days) {
+      // 하루 총 9시간 초과?
+      if (d.totalMinutes > MAX_DAILY_MIN) hasOverDailyMax = true;
+
+      // 구간 3시간 미만?
+      if (!hasShortShift) {
+        for (const seg of d.intervals) {
+          if (seg.minutes > 0 && seg.minutes < MIN_SHIFT_MIN) {
+            hasShortShift = true;
+            break;
+          }
+        }
+      }
+    }
+
+    if (hasShortShift) {
+      errors.push('Shift는 3시간 이상이어야 합니다.');
+    }
+    if (hasOverDailyMax) {
+      errors.push('하루 총 근무시간은 최대 9시간입니다.');
+    }
+
+    // 주간 20~40시간
+    if (schedule.weeklyTotalMinutes < MIN_WEEKLY_MIN || schedule.weeklyTotalMinutes > MAX_WEEKLY_MIN) {
+      errors.push(`Weekly Total: ${fmt(schedule.weeklyTotalMinutes)} (요구: ${fmt(MIN_WEEKLY_MIN)}–${fmt(MAX_WEEKLY_MIN)})`);
+    }
+
+    return { ok: errors.length === 0, errors };
+  }
+
+  function showValidation(result) {
+  if (result.ok) {
+    // 내용 비우고 숨김(자리는 유지)
+    VALID_BANNER.textContent = '';
+    VALID_BANNER.classList.remove('show');
+    SUBMIT_BTN.disabled = false;
+  } else {
+    SUBMIT_BTN.disabled = true;
+    VALID_BANNER.textContent = 'Validation: ' + result.errors.slice(0, 2).join(' | ');
+    VALID_BANNER.classList.add('show');
+  }
+}
+
+  function refreshValidationAndPayload() {
+    recalcTotals();
+    const schedule = buildSchedule();
+    JSON_INPUT.value = JSON.stringify(schedule);
+    const result = validateSchedule(schedule);
+    showValidation(result);
+    return result;
+  }
+
+  // ----- 슬롯 그리기/지우기(드래그 토글) -----
+  function createSlot(idx) {
+    const slot = document.createElement('div');
+    slot.className = 'slot';
+    slot.dataset.slot = String(idx);
+    const widthPct = 100 / SLOTS_PER_DAY;
+    slot.style.left = (idx * widthPct) + '%';
+    slot.style.width = widthPct + '%';
+    return slot;
+  }
+  function indexFromEvent(ev, el) {
+    const rect = el.getBoundingClientRect();
+    const clientX = ev.touches ? ev.touches[0].clientX : ev.clientX;
+
+    // 컨테이너 기준 x
+    let x = clientX - rect.left;
+
+    // 경계 보정: 오른쪽 끝에서 idx=60 방지
+    if (x < 0) x = 0;
+    if (x >= rect.width) x = rect.width - 0.0001;
+
+    const ratio = x / rect.width;
+
+    // 0 ≤ idx ≤ 59 로 클램프
+    let idx = Math.floor(ratio * SLOTS_PER_DAY); // SLOTS_PER_DAY = 60
+    if (idx < 0) idx = 0;
+    if (idx >= SLOTS_PER_DAY) idx = SLOTS_PER_DAY - 1;
+
+    return idx;
+  }
+
+  document.querySelectorAll('.day-row .hours').forEach((hoursEl) => {
+    let isDragging = false;
+    let dragMode = null; // 'paint' | 'erase'
+    let lastIndex = null;
+    let suppressNextClick = false;
+
+    hoursEl.addEventListener('click', (ev) => {
+      if (suppressNextClick) {
+        ev.preventDefault();
+        ev.stopImmediatePropagation();
+        suppressNextClick = false;
+        return;
+      }
+      if (isDragging) return;
+      const idx = indexFromEvent(ev, hoursEl);
+      const existing = hoursEl.querySelector(`.slot[data-slot="${idx}"]`);
+      if (existing) existing.remove();
+      else hoursEl.appendChild(createSlot(idx));
+      refreshValidationAndPayload();
+    }, true);
+
+    const applyAtIndex = (idx) => {
+      const existing = hoursEl.querySelector(`.slot[data-slot="${idx}"]`);
+      if (dragMode === 'erase') {
+        if (existing) existing.remove();
+      } else {
+        if (!existing) hoursEl.appendChild(createSlot(idx));
+      }
+    };
+
+    const onStart = (ev) => {
+      isDragging = true;
+      dragMode = null;
+      lastIndex = null;
+      const idx = indexFromEvent(ev, hoursEl);
+      const existing = hoursEl.querySelector(`.slot[data-slot="${idx}"]`);
+      dragMode = existing ? 'erase' : 'paint';
+      applyAtIndex(idx);
+      lastIndex = idx;
+      refreshValidationAndPayload();
+    };
+
+    const onMove = (ev) => {
+      if (!isDragging) return;
+      const idx = indexFromEvent(ev, hoursEl);
+      if (idx === lastIndex) return;
+      lastIndex = idx;
+      applyAtIndex(idx);
+      refreshValidationAndPayload();
+    };
+
+    const onEnd = () => {
+      isDragging = false;
+      dragMode = null;
+      lastIndex = null;
+      suppressNextClick = true; // 드래그 후 click 1회 무시
+      refreshValidationAndPayload();
+    };
+
+    hoursEl.addEventListener('mousedown', onStart);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onEnd);
+
+    hoursEl.addEventListener('touchstart', onStart, { passive: true });
+    window.addEventListener('touchmove', onMove, { passive: true });
+    window.addEventListener('touchend', onEnd);
+    window.addEventListener('touchcancel', onEnd);
+
+    hoursEl.style.userSelect = 'none';
+  });
+
+  // ----- Reset 버튼 -----
+  if (RESET_BTN) {
+    RESET_BTN.addEventListener('click', () => {
+      document.querySelectorAll('.day-row .hours .slot').forEach(el => el.remove());
+      refreshValidationAndPayload();
+    });
+  }
+
+  // ----- Submit 처리 (프론트 검증 → 통과 시 HTMX 제출) -----
+  if (FORM) {
+    FORM.addEventListener('submit', (e) => {
+      const result = refreshValidationAndPayload();
+      if (!result.ok) {
+        // 제출 막고 에러 표시 유지
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    });
+  }
+
+  // ----- HTMX 응답 후 상태배너 갱신 (200대면 Pending으로 표시) -----
+  document.body.addEventListener('htmx:afterRequest', (e) => {
+    const xhr = e.detail && e.detail.xhr;
+    if (xhr && xhr.status >= 200 && xhr.status < 300) {
+      const banner = document.getElementById('status-banner');
+      if (banner) {
+        banner.textContent = 'Status: Pending Approval';
+        banner.style.background = '#fff7e0';
+        banner.style.color = '#7a4b00';
+      }
+      // 제출 후 버튼 다시 비활성화(원하면 유지)
+      // SUBMIT_BTN.disabled = true;
+    }
+  });
+
+  // 초기 표시
+  refreshValidationAndPayload();
+})();
+</script>
+
+
 {{end}}
+
+{{define "schedule"}}{{template "base" .}}{{end}}

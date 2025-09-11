@@ -33,7 +33,7 @@ func newSessionID() string {
 func setSession(w http.ResponseWriter, sess Session) {
 	sid := newSessionID()
 	// 세션/쿠키 만료시간을 '동일'하게 정의
-	expiry := time.Now().Add(3 * time.Minute)
+	expiry := time.Now().Add(15 * time.Minute)
 
 	sess.Expires = expiry
 

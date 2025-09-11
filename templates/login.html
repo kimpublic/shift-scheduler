@@ -2,13 +2,30 @@
 
 {{define "content"}}
   <h2>Login</h2>
-  <form method="post" action="/login" style="max-width:300px">
+
+  <!-- HTMX 폼: 실패 시 #alert-area만 교체, 성공 시 HX-Redirect로 이동 -->
+  <form
+    method="post"
+    action="/login"
+    hx-post="/login"
+    hx-target="#alert-area"
+    hx-swap="innerHTML"
+    hx-select="#alert-area"
+    style="max-width:300px"
+  >
     <label>Username<br>
-      <input type="text" name="username" autocomplete="username" style="width:100%;padding:.5rem;margin:.25rem 0">
+      <input type="text" name="username" autocomplete="username"
+             style="width:100%;padding:.5rem;margin:.25rem 0" autofocus>
     </label>
     <label>Password<br>
-      <input type="password" name="password" autocomplete="current-password" style="width:100%;padding:.5rem;margin:.25rem 0">
+      <input type="password" name="password" autocomplete="current-password"
+             style="width:100%;padding:.5rem;margin:.25rem 0">
     </label>
     <button style="margin-top:1rem;padding:.5rem 1rem">Sign In</button>
   </form>
+
+  <!-- 데모 편의를 위한 계정 안내(선택) -->
+  <p style="margin-top:.75rem;color:#555;font-size:.9rem">
+    Demo: <code>admin / password</code> 또는 <code>user1 / password</code>
+  </p>
 {{end}}

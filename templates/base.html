@@ -34,10 +34,21 @@
   <header>
     <img src="/static/byu-logo.png" alt="BYU">
     <h1>Shift Scheduler</h1>
+    {{if .User}}
+    <form hx-post="/logout" hx-trigger="click" style="margin:0">
+      <button type="submit">Logout</button>
+    </form>
+    {{end}}
   </header>
 
   <main>
+    <div id="alert-area">
+      {{if .Error}}
+        <p style="color:red">{{.Error}}</p>
+      {{end}}
+    </div>
     {{block "content" .}}{{end}}
   </main>
+    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
 </body>
 </html>

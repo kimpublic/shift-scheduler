@@ -1,8 +1,18 @@
 {{define "title"}}대시보드{{end}}
-{{define "body"}}
+
+{{define "content"}}
   <div class="container">
     <h1>대시보드</h1>
     <p class="muted">User login screen</p>
-    <a href="/">로그아웃(데모용: 그냥 로그인 페이지로 이동)</a>
+
+    <!-- 데모용 사용자 정보 표시 (선택) -->
+    {{if .User}}
+      <p style="color:#555">안녕하세요, <strong>{{.User}}</strong>님 (role: {{.Role}})</p>
+    {{end}}
+
+    <!-- 로그아웃: base에도 버튼 있지만, 본문에도 하나 두고 싶다면 -->
+    <form method="post" action="/logout" hx-post="/logout" hx-redirect="/" style="margin-top:1rem">
+      <button type="submit">로그아웃</button>
+    </form>
   </div>
 {{end}}

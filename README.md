@@ -7,11 +7,13 @@
 
 ```bash
 go run main.go
+```
 
 - Open two browser windows in Incognito mode and navigate to:
 
 ```text
 http://localhost:8080/
+```
 
 - Log in with the following test accounts:
 

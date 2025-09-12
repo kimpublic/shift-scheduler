@@ -17,9 +17,9 @@ http://localhost:8080/
 
 - Log in with the following test accounts:
 
--- user1 / password
+  - user1 / password
 
--- admin / password
+  - admin / password
 
 ## Main Features
 - Users can create and submit weekly schedule plans by dragging on the interface.

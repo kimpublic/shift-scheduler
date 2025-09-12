@@ -1,4 +1,4 @@
-# shift-scheduler
+# Shift Scheduler
 
 ## How to Run This Project
 - Download and install Go.

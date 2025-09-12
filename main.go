@@ -3,27 +3,27 @@ package main
 import (
 	cryptoRand "crypto/rand"
 	"encoding/hex"
-	"encoding/json" // ★ 추가
-	"fmt"           // ★ 추가
+	"encoding/json"
+	"fmt"
 	"html/template"
 	"log"
 	"net/http"
-	"sort"    // ★ 추가
-	"strconv" // ★ 추가
-	"strings" // ★ 추가
+	"sort"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
 
 // ===== 스케줄 도메인 =====
 type Interval struct {
-	Start   string `json:"start"`   // "HH:MM"
-	End     string `json:"end"`     // "HH:MM"
-	Minutes int    `json:"minutes"` // 프론트 참고용, 서버에서 재계산
+	Start   string `json:"start"`
+	End     string `json:"end"`
+	Minutes int    `json:"minutes"`
 }
 
 type Day struct {
-	Day          string     `json:"day"` // Mon~Fri
+	Day          string     `json:"day"`
 	Intervals    []Interval `json:"intervals"`
 	TotalMinutes int        `json:"totalMinutes"`
 }
@@ -54,11 +54,10 @@ type ScheduleRecord struct {
 	ReviewedAt  *time.Time
 }
 
-// 인메모리 저장 (username -> record)
 var (
-	submissionsByID   = map[string]*ScheduleRecord{} // id -> record
-	userSubmissionIDs = map[string][]string{}        // user -> [id1,id2,...] (오래된 순서로 append)
-	userLatestID      = map[string]string{}          // user -> latest id
+	submissionsByID   = map[string]*ScheduleRecord{}
+	userSubmissionIDs = map[string][]string{}
+	userLatestID      = map[string]string{}
 	scMu              sync.Mutex
 )
 
@@ -67,8 +66,8 @@ const (
 	MaxDailyMin  = 9 * 60
 	MinWeeklyMin = 20 * 60
 	MaxWeeklyMin = 40 * 60
-	DayStartMin  = 8 * 60  // 08:00
-	DayEndMin    = 18 * 60 // 18:00
+	DayStartMin  = 8 * 60
+	DayEndMin    = 18 * 60
 )
 
 type Session struct {
@@ -93,7 +92,6 @@ var (
 		},
 	}
 
-	// ⬇︎ 변경: ParseGlob 전에 Funcs 등록
 	tmpl     = template.Must(template.New("all").Funcs(funcMap).ParseGlob("templates/*.html"))
 	sessions = map[string]Session{}
 	sMu      sync.Mutex
@@ -143,16 +141,15 @@ func validateServer(p SchedulePayload) (ok bool, messages []string, fixed Schedu
 	}
 	p.WeeklyTotalMinutes = weekly
 
-	// 프론트와 동일한 "축약" 메시지 정책
 	if hasShort {
-		messages = append(messages, "Shift는 3시간 이상이어야 합니다.")
+		messages = append(messages, "A shift should be more than 3 hours.")
 	}
 	if hasOverDaily {
-		messages = append(messages, "하루 총 근무시간은 최대 9시간입니다.")
+		messages = append(messages, "'A day's total working hours must not exceed 9 hours.")
 	}
 	if weekly < MinWeeklyMin || weekly > MaxWeeklyMin {
 		messages = append(messages,
-			fmt.Sprintf("Weekly Total: %dh %dm (요구: %dh %dm–%dh %dm)",
+			fmt.Sprintf("Weekly Total: %dh %dm (Required Hours: %dh %dm–%dh %dm)",
 				weekly/60, weekly%60, MinWeeklyMin/60, MinWeeklyMin%60, MaxWeeklyMin/60, MaxWeeklyMin%60))
 	}
 	return len(messages) == 0, messages, p
@@ -160,7 +157,7 @@ func validateServer(p SchedulePayload) (ok bool, messages []string, fixed Schedu
 
 func newSubmissionID() string { return newSessionID() }
 
-// POST "/schedule/submit" : 학생 제출
+// POST "/schedule/submit" 유저 제출
 func scheduleSubmitHandler(w http.ResponseWriter, r *http.Request) {
 	s, ok := currentUser(w, r)
 	if !ok || s.Role != "student" {
@@ -180,7 +177,6 @@ func scheduleSubmitHandler(w http.ResponseWriter, r *http.Request) {
 
 	ok2, msgs, fixed := validateServer(payload)
 	if !ok2 {
-		// 422 + validation-banner만 OOB로 업데이트, status는 Draft 유지
 		w.WriteHeader(422)
 		_, _ = fmt.Fprintf(w, `
 		<div class="status-banner" id="status-banner" data-status="Draft">Status: Draft</div>
@@ -194,7 +190,7 @@ func scheduleSubmitHandler(w http.ResponseWriter, r *http.Request) {
 	scMu.Lock()
 	defer scMu.Unlock()
 
-	// 1) 해당 유저의 기존 Pending 모두 Expired
+	// 해당 유저의 기존 Pending 모두 Expired
 	if ids := userSubmissionIDs[s.Username]; len(ids) > 0 {
 		expireTS := time.Now()
 		for _, oldID := range ids {
@@ -205,7 +201,7 @@ func scheduleSubmitHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 2) 새 제출 생성 (항상 새로운 버전으로 append)
+	// 새 제출 생성 (항상 새로운 버전으로 append)
 	id := newSubmissionID()
 	now := time.Now()
 	ver := len(userSubmissionIDs[s.Username]) + 1
@@ -223,7 +219,7 @@ func scheduleSubmitHandler(w http.ResponseWriter, r *http.Request) {
 	userSubmissionIDs[s.Username] = append(userSubmissionIDs[s.Username], id)
 	userLatestID[s.Username] = id
 
-	// 성공 응답: status-banner 교체 + validation-banner 초기화(OOB)
+	// 성공 응답
 	_, _ = fmt.Fprintf(w, `
 	<div class="status-banner" id="status-banner" data-status="Pending">Status: Pending Approval</div>
 	<div id="validation-banner" class="status-banner validation" hx-swap-oob="true"></div>`)
@@ -251,7 +247,7 @@ func adminApproveHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
-	// Pending이 아니면 상태 변경 안 하고 409로 행만 갱신
+
 	if rec.Status != StatusPending {
 		scMu.Unlock()
 		w.WriteHeader(409)
@@ -290,14 +286,14 @@ func adminRejectHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
-	// Pending이 아니면 상태 변경 안 하고 409
+
 	if rec.Status != StatusPending {
 		scMu.Unlock()
 		w.WriteHeader(409)
 		_ = tmpl.ExecuteTemplate(w, "approval_row", rec)
 		return
 	}
-	// 사유가 비면 422 (행 다시 그림)
+
 	if comment == "" {
 		scMu.Unlock()
 		w.WriteHeader(422)
@@ -324,7 +320,7 @@ func newSessionID() string {
 // 생성된 세션 저장 및 쿠키 생성
 func setSession(w http.ResponseWriter, sess Session) {
 	sid := newSessionID()
-	// 세션/쿠키 만료시간을 '동일'하게 정의
+	// 세션/쿠키 만료시간 정의
 	expiry := time.Now().Add(15 * time.Minute)
 
 	sess.Expires = expiry
@@ -339,10 +335,7 @@ func setSession(w http.ResponseWriter, sess Session) {
 		Path:     "/",
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
-		// 프로덕션이면 true 권장 (HTTPS 전제)
-		// Secure: true,
-		Expires: expiry, // 쿠키도 동일 만료
-		// MaxAge: int(time.Until(expiry).Seconds()), // 원하면 MaxAge도 같이
+		Expires:  expiry,
 	})
 }
 
@@ -398,7 +391,7 @@ func clearSession(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// 헬퍼: HTMX 요청 여부
+// HTMX 요청 여부
 func isHTMX(r *http.Request) bool {
 	return r.Header.Get("HX-Request") == "true"
 }
@@ -466,10 +459,8 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 	setSession(w, Session{
 		Username: username,
 		Role:     role,
-		// Expires: time.Now().Add(12*time.Hour), // 필요 시 사용
 	})
 
-	// 역할별 리다이렉트
 	redirectByRoleHTMX(w, r, role)
 }
 
@@ -495,7 +486,6 @@ func scheduleHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 기본값
 	status := "Draft"
 	var savedJSON template.JS = "null"
 	rejectComment := ""
@@ -524,7 +514,7 @@ func scheduleHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// GET "/approval": 관리자 전용(플레이스홀더)
+// GET "/approval": 관리자 전용
 func approvalHandler(w http.ResponseWriter, r *http.Request) {
 	s, ok := currentUser(w, r)
 	if !ok || s.Role != "admin" {
@@ -572,7 +562,7 @@ func startSessionGC() {
 func render(w http.ResponseWriter, page string, data any) {
 	t := template.Must(
 		template.New("base").
-			Funcs(funcMap). // ⬅️ 추가
+			Funcs(funcMap).
 			ParseFiles(
 				"templates/base.html",
 				"templates/"+page,

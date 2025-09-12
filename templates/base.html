@@ -1,104 +1,116 @@
 <!doctype html>
 <html>
-<head>
-  <meta charset="utf-8">
-  <title>{{block "title" .}}Shift Scheduler{{end}}</title>
+  <head>
+    <meta charset="utf-8" />
+    <title>{{block "title" .}}Shift Scheduler{{end}}</title>
 
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,100..700;1,100..700&display=swap" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,100..700;1,100..700&display=swap"
+      rel="stylesheet"
+    />
 
-  <style>
-    body {
-      margin: 0;
-      font-family: "IBM Plex Sans", Helvetica, Arial, sans-serif;
-      background: #ffffff;
-    }
-    header {
-      display: flex;
-      align-items: center;
-      padding: 1rem 2rem;
-      background-color: #002E5D;
-      color: white;
-    }
-    header img {
-      height: 40px;
-      margin-right: 1rem;
-    }
-    header button {
-    font-family: "IBM Plex Sans", Helvetica, Arial, sans-serif;
-    color: #fff;              /* 글자 흰색 */
-    background: transparent;  /* 배경 투명 */
-    border: none;             /* 테두리 제거 */
-    cursor: pointer;
-    font-size: 1rem;
-    padding: 0.5rem 1rem;
-    font-weight: bold;  
-  }
-  header button:hover {
-    text-decoration: underline; /* 호버 시 밑줄 (선택사항) */
-  }
-    main {
-      padding: 2rem;
-    }
+    <style>
+      body {
+        margin: 0;
+        font-family: "IBM Plex Sans", Helvetica, Arial, sans-serif;
+        background: #ffffff;
+      }
 
-  /* Submit / Reset 버튼 공통 스타일 */
-#schedule-form button {
-  font-family: "IBM Plex Sans", Helvetica, Arial, sans-serif;
-  background: #002E5D;
-  color: #fff;
-  border: none;              /* 테두리 제거 */
-  border-radius: 8px;        /* 모서리 라운드(원하면 조정) */
-  padding: .55rem .9rem;
-  font-weight: 700;
-  cursor: pointer;
-}
+      header {
+        display: flex;
+        align-items: center;
+        padding: 1rem 2rem;
+        background-color: #002e5d;
+        color: #fff;
+      }
 
-/* 상태에 따른 상호작용 */
-#schedule-form button:hover:not(:disabled) { opacity: .92; }
-#schedule-form button:disabled { opacity: .5; cursor: not-allowed; }
+      header img {
+        height: 40px;
+        margin-right: 1rem;
+      }
 
-/* 접근성 포커스(선택 사항) */
-#schedule-form button:focus-visible {
-  outline: 2px solid #c9d7ea;
-  outline-offset: 2px;
-}
-/* Validation Banner */
-#banner {
-  background: #fdecec;
-  color: #8a0000;
-  padding: .75rem 1rem;
-  border: 1px solid #f5c2c2;
-  border-radius: 6px;
-  margin-bottom: 1rem;
+      header button {
+        font-family: "IBM Plex Sans", Helvetica, Arial, sans-serif;
+        color: #fff;
+        background: transparent;
+        border: none;
+        cursor: pointer;
+        font-size: 1rem;
+        padding: 0.5rem 1rem;
+        font-weight: bold;
+      }
 
-  /* ✅ 긴 문구 자동 줄바꿈 */
-  white-space: normal;   /* nowrap 대신 normal */
-  word-wrap: break-word; /* 너무 긴 단어도 줄바꿈 */
-  overflow-wrap: break-word; /* 최신 브라우저 지원 */
-}
-  </style>
-</head>
-<body>
-  <header>
-    <img src="/static/byu-logo.png" alt="BYU">
-    <h1>Shift Scheduler</h1>
-    <spacer style="flex-grow:1"></spacer>
-    {{if .User}}
-    <form hx-post="/logout" hx-trigger="click" style="margin:0">
-      <button type="submit">Logout</button>
-    </form>
-    {{end}}
-  </header>
+      header button:hover {
+        text-decoration: underline;
+      }
 
-  <main>
-    <div id="alert-area">
-      {{if .Error}}
-        <p style="color:red">{{.Error}}</p>
+      main {
+        padding: 2rem;
+      }
+
+      #schedule-form button {
+        font-family: "IBM Plex Sans", Helvetica, Arial, sans-serif;
+        background: #002e5d;
+        color: #fff;
+        border: none;
+        border-radius: 8px;
+        padding: 0.55rem 0.9rem;
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+      
+      #schedule-form button:hover:not(:disabled) {
+        opacity: 0.92;
+      }
+
+      #schedule-form button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+
+      
+      #schedule-form button:focus-visible {
+        outline: 2px solid #c9d7ea;
+        outline-offset: 2px;
+      }
+
+      /* Validation Banner */
+      #banner {
+        background: #fdecec;
+        color: #8a0000;
+        padding: 0.75rem 1rem;
+        border: 1px solid #f5c2c2;
+        border-radius: 6px;
+        margin-bottom: 1rem;
+        white-space: normal;
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <img src="/static/byu-logo.png" alt="BYU" />
+      <h1>Shift Scheduler</h1>
+      <spacer style="flex-grow: 1"></spacer>
+      {{if .User}}
+      <form hx-post="/logout" hx-trigger="click" style="margin: 0">
+        <button type="submit">Logout</button>
+      </form>
       {{end}}
-    </div>
-    {{block "content" .}}{{end}}
-  </main>
+    </header>
+
+    <main>
+      <div id="alert-area">
+        {{if .Error}}
+        <p style="color: red">{{.Error}}</p>
+        {{end}}
+      </div>
+      {{block "content" .}}{{end}}
+    </main>
     <script src="https://unpkg.com/htmx.org@1.9.12"></script>
-</body>
+  </body>
 </html>

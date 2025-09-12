@@ -3,7 +3,6 @@
 {{define "content"}}
   <h2>Login</h2>
 
-  <!-- HTMX 폼: 실패 시 #alert-area만 교체, 성공 시 HX-Redirect로 이동 -->
   <form
     method="post"
     action="/login"
@@ -13,19 +12,43 @@
     hx-select="#alert-area"
     style="max-width:300px"
   >
-    <label>Username<br>
-      <input type="text" name="username" autocomplete="username"
-             style="width:100%;padding:.5rem;margin:.25rem 0" autofocus>
+    <label>
+      Username<br>
+      <input
+        type="text"
+        name="username"
+        autocomplete="username"
+        style="width:100%;padding:.5rem;margin:.25rem 0"
+        autofocus
+      >
     </label>
-    <label>Password<br>
-      <input type="password" name="password" autocomplete="current-password"
-             style="width:100%;padding:.5rem;margin:.25rem 0">
+    <label>
+      Password<br>
+      <input
+        type="password"
+        name="password"
+        autocomplete="current-password"
+        style="width:100%;padding:.5rem;margin:.25rem 0"
+      >
     </label>
-    <button style="margin-top:1rem;padding:.5rem 1rem">Sign In</button>
+    <button 
+      style="margin-top:1rem;padding:.5rem 1rem;
+             font-family:'IBM Plex Sans', Helvetica, Arial, sans-serif;
+             background-color:#002E5D;
+             color:#ffffff;
+             border:none;
+             border-radius:5px;
+             cursor:pointer;">
+      <strong>Sign In</strong>
+    </button>
   </form>
-
-  <!-- 데모 편의를 위한 계정 안내(선택) -->
   <p style="margin-top:.75rem;color:#555;font-size:.9rem">
-    Demo: <code>admin / password</code> 또는 <code>user1 / password</code>
+    Acounts for Demo
+  </p>
+  <p style="margin-top:.75rem;color:#555;font-size:.9rem">
+    <code>admin / password</code>
+  </p>
+  <p style="margin-top:.75rem;color:#555;font-size:.9rem">
+    <code>user1 / password</code>
   </p>
 {{end}}

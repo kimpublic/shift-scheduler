@@ -1,716 +1,752 @@
 {{define "title"}}Schedule – Shift Scheduler{{end}}
 
 {{define "content"}}
-<style>
-  /* 레이아웃 */
-  .page {
-    display: grid;
-    grid-template-columns: 1fr 320px;
-    gap: 1.5rem;
-  }
-  .card {
-    background: #fff;
-    border: 1px solid #e7e7e7;
-    border-radius: 10px;
-    box-shadow: 0 1px 2px rgba(0,0,0,.04);
-  }
-  .card .body { padding: 1rem 1.25rem; }
+  <style>
 
-  /* 상태 배너 (초기: draft) */
-  .status-banner {
-    margin-bottom: 1rem;
-    padding: .75rem 1rem;
-    border-radius: 8px;
-    background: #eef5ff;
-    color: #002E5D;
-    font-weight: 600;
-  }
+    .page {
+      display: grid;
+      grid-template-columns: 1fr 320px;
+      gap: 1.5rem;
+    }
+    .card {
+      background: #fff;
+      border: 1px solid #e7e7e7;
+      border-radius: 10px;
+      box-shadow: 0 1px 2px rgba(0,0,0,.04);
+    }
+    .card .body {
+      padding: 1rem 1.25rem;
+    }
 
-  /* 상태별 배너 색상 (data-status 기반) */
-  .status-banner[data-status="Draft"]    { background:#eef5ff; color:#002E5D; }
-  .status-banner[data-status="Pending"]  { background:#fff7e0; color:#7a4b00; }
-  .status-banner[data-status="Approved"] { background:#e7f7ec; color:#0b5f2a; }
-  .status-banner[data-status="Rejected"] { background:#fdecec; color:#8a0000; }
+    .status-banner {
+      margin-bottom: 1rem;
+      padding: .75rem 1rem;
+      border-radius: 8px;
+      background: #eef5ff;
+      color: #002E5D;
+      font-weight: 600;
+    }
 
-  /* 시간 그리드 컨테이너 */
-  .week {
-    padding: 1rem 1.25rem 1.5rem;
-  }
-  .week .header {
-    display: grid;
-    grid-template-columns: 100px repeat(10, 1fr); /* Day label + 10시간 */
-    gap: 0;
-    font-weight: 600;
-    color: #333;
-  }
-  .week .header div {
-    padding: .25rem .5rem;
-    font-size: .9rem;
-  }
-  .week .header .label { color: #555; }
+    .status-banner[data-status="Draft"]    { background:#eef5ff; color:#002E5D; }
+    .status-banner[data-status="Pending"]  { background:#fff7e0; color:#7a4b00; }
+    .status-banner[data-status="Approved"] { background:#e7f7ec; color:#0b5f2a; }
+    .status-banner[data-status="Rejected"] { background:#fdecec; color:#8a0000; }
 
-  /* 요일 행 */
-  .day-row {
-    display: grid;
-    grid-template-columns: 100px 1fr; /* 라벨 + 시간영역 */
-    align-items: stretch;
-  }
-  .day-row .label {
-    padding: .5rem .5rem;
-    border-top: 1px solid #eee;
-    border-right: 1px solid #eee;
-    font-weight: 600;
-    color: #444;
-    background: #fafafa;
-  }
-  .day-row .hours {
-    position: relative;
-    border-top: 1px solid #eee;
-    min-height: 48px; /* 기본 높이 */
-    /* 10분 가이드: 전체 폭을 60등분(10시간 × 6)하여 얇은 세로 라인 */
-    background-image:
-      /* 1시간 굵은 라인(10등분) */
-      linear-gradient(to right, rgba(0,0,0,.12) 0, rgba(0,0,0,.12) 1px, transparent 1px),
-      /* 10분 가이드(60등분) */
-      repeating-linear-gradient(to right,
-        rgba(0,0,0,.08) 0 1px,
-        transparent 1px calc(100%/60)
-      );
-    background-size:
-      calc(100%/10) 100%, /* 시간 라인 간격 */
-      100% 100%;          /* 10분 가이드 전체 적용 */
-    background-position:
-      left top,
-      left top;
-    background-repeat: repeat no-repeat;
-  }
-  /* 시간 머리글(8~17라벨) 아래의 1시간 경계선과 얼라인을 맞추기 위해 padding */
-  .hours::before { content: ""; display: block; height: 0; }
+    .week {
+      padding: 1rem 1.25rem 1.5rem;
+    }
+    .week .header {
+      display: grid;
+      grid-template-columns: 100px repeat(10, 1fr);
+      gap: 0;
+      font-weight: 600;
+      color: #333;
+    }
+    .week .header div {
+      padding: .25rem .5rem;
+      font-size: .9rem;
+    }
+    .week .header .label {
+      color: #555;
+    }
 
-  /* 폼과 토탈 패널 */
-  .form-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr) auto;
-    gap: .75rem;
-    margin-top: 1rem;
-  }
-  .form-grid label { display: block; font-size: .85rem; color: #333; margin-bottom: .35rem; }
-  .form-grid select, .form-grid button {
-    width: 100%; padding: .5rem; border: 1px solid #ddd; border-radius: 8px; background: #fff;
-    font-family: inherit;
-  }
-  .form-grid button { background: #002E5D; color: #fff; cursor: pointer; font-weight: 600; }
+    .day-row {
+      display: grid;
+      grid-template-columns: 100px 1fr; 
+      align-items: stretch;
+    }
+    .day-row .label {
+      padding: .5rem .5rem;
+      border-top: 1px solid #eee;
+      border-right: 1px solid #eee;
+      font-weight: 600;
+      color: #444;
+      background: #fafafa;
+    }
+    .day-row .hours {
+      position: relative;
+      border-top: 1px solid #eee;
+      min-height: 48px; 
+      background-image:
+        linear-gradient(to right, rgba(0,0,0,.12) 0, rgba(0,0,0,.12) 1px, transparent 1px),
+        repeating-linear-gradient(to right,
+          rgba(0,0,0,.08) 0 1px,
+          transparent 1px calc(100%/60)
+        );
+      background-size:
+        calc(100%/10) 100%, 
+        100% 100%;         
+      background-position:
+        left top,
+        left top;
+      background-repeat: repeat no-repeat;
+    }
+  
+    .hours::before {
+      content: "";
+      display: block;
+      height: 0;
+    }
 
-  .totals h3 { margin: 0 0 .5rem 0; font-size: 1rem; }
-  .totals .list { display: grid; gap: .5rem; }
-  .totals .row { display: flex; justify-content: space-between; font-size: .95rem; }
-  .totals .weekly { margin-top: .75rem; padding-top: .75rem; border-top: 1px dashed #ddd; font-weight: 700; }
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr) auto;
+      gap: .75rem;
+      margin-top: 1rem;
+    }
+    .form-grid label {
+      display: block;
+      font-size: .85rem;
+      color: #333;
+      margin-bottom: .35rem;
+    }
+    .form-grid select,
+    .form-grid button {
+      width: 100%;
+      padding: .5rem;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      background: #fff;
+      font-family: inherit;
+    }
+    .form-grid button {
+      background: #002E5D;
+      color: #fff;
+      cursor: pointer;
+      font-weight: 600;
+    }
 
-  /* 작은 화면 대응 */
-  @media (max-width: 900px) {
-    .page { grid-template-columns: 1fr; }
-  }
+    .totals h3 {
+      margin: 0 0 .5rem 0;
+      font-size: 1rem;
+    }
+    .totals .list {
+      display: grid;
+      gap: .5rem;
+    }
+    .totals .row {
+      display: flex;
+      justify-content: space-between;
+      font-size: .95rem;
+    }
+    .totals .weekly {
+      margin-top: .75rem;
+      padding-top: .75rem;
+      border-top: 1px dashed #ddd;
+      font-weight: 700;
+    }
 
-   /* 선택 슬롯(10분 단위) */
-  .hours { position: relative; } /* 이미 있음: 안전하게 유지 */
-  .hours .slot {
-    position: absolute;
-    top: 0; bottom: 0;
-    background: #002E5D;
-    /* 시각적으로 그리드 위에 올라오도록 */
-    z-index: 1;
-    /* 접근성 향상용(포커스 테두리 등 필요시) */
-    outline: none;
-  }
-
-  #validation-banner {
-  background: #fff0f0;
-  color: #b00020;
-  /* 한 줄 + 패딩 기준으로 높이 고정 (상황에 맞게 40~48px 조정 가능) */
-  min-height: 44px;
-  display: block;          /* 항상 블록(자리 차지) */
-  visibility: hidden;      /* 기본은 숨김(자리 유지) */
-  opacity: 0;              /* 기본은 투명 */
-  transition: opacity 120ms ease-in;
-  margin-bottom: 1rem;     /* 아래 콘텐츠와 간격 유지 */
-  white-space: normal;     
-  overflow: hidden;
-  text-overflow: ellipsis;
-  overflow-wrap: anywhere;
-}
-
-/* 에러 있을 때만 보이게 */
-#validation-banner.show {
-  visibility: visible;
-  opacity: 1;
-}
-
-.day-row .hours.locked { pointer-events: none; cursor: not-allowed; }
-
-#review-banner {
-  background:#fdecec;
-  color:#8a0000;
-  display:none;
-  margin-bottom:1rem;
-  white-space:nowrap;
-  overflow:hidden;
-  text-overflow:ellipsis;
-}
-#review-banner.show { display:block; }
-
-/* Submit / Reset 버튼 공통 스타일 */
-#schedule-form button {
-  font-family: "IBM Plex Sans", Helvetica, Arial, sans-serif;
-  background: #002E5D;
-  color: #fff;
-  border: none;              /* 테두리 제거 */
-  border-radius: 8px;        /* 모서리 라운드(원하면 조정) */
-  padding: .55rem .9rem;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-/* 상태에 따른 상호작용 */
-#schedule-form button:hover:not(:disabled) { opacity: .92; }
-#schedule-form button:disabled { opacity: .5; cursor: not-allowed; }
-
-/* 접근성 포커스(선택 사항) */
-#schedule-form button:focus-visible {
-  outline: 2px solid #c9d7ea;
-  outline-offset: 2px;
-}
-
-
-
-</style>
-
-<div class="page">
-  <!-- 좌측: 스케줄 편집 영역 -->
-  <section class="card">
-    <div class="body">
-      <div class="status-banner" id="status-banner" data-status="{{.Status}}">
-        Status: {{if eq .Status "Pending"}}Pending Approval{{else}}{{.Status}}{{end}}
-      </div>
-      <div class="status-banner validation" id="validation-banner" aria-live="polite"></div>
-
-      <div class="status-banner review {{if .RejectComment}}show{{end}}" id="review-banner" aria-live="polite">
-        {{if .RejectComment}}Reason for Rejection: {{.RejectComment}}{{end}}
-      </div>
-
-      <script id="saved-schedule" type="application/json">{{.SavedJSON}}</script>
-
-
-
-      <!-- 시간 그리드 헤더 -->
-      <div class="week">
-        <div class="header">
-          <div class="label">Day</div>
-          <div>8:00</div><div>9:00</div><div>10:00</div><div>11:00</div><div>12:00</div>
-          <div>1:00</div><div>2:00</div><div>3:00</div><div>4:00</div><div>5:00</div>
-        </div>
-
-        <!-- 요일 행들: 10분 가이드는 .hours 영역 배경으로 시각화 -->
-        <div class="day-row">
-          <div class="label">Mon</div>
-          <div class="hours"></div>
-        </div>
-        <div class="day-row">
-          <div class="label">Tue</div>
-          <div class="hours"></div>
-        </div>
-        <div class="day-row">
-          <div class="label">Wed</div>
-          <div class="hours"></div>
-        </div>
-        <div class="day-row">
-          <div class="label">Thu</div>
-          <div class="hours"></div>
-        </div>
-        <div class="day-row">
-          <div class="label">Fri</div>
-          <div class="hours"></div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- 우측: 합계 패널 -->
-  <aside class="card totals">
-    <div class="body">
-      <h3>Totals</h3>
-      <div class="list">
-        <div class="row"><span>Mon</span><span>0h 0m</span></div>
-        <div class="row"><span>Tue</span><span>0h 0m</span></div>
-        <div class="row"><span>Wed</span><span>0h 0m</span></div>
-        <div class="row"><span>Thu</span><span>0h 0m</span></div>
-        <div class="row"><span>Fri</span><span>0h 0m</span></div>
-      </div>
-      <div class="weekly row"><span>Weekly Total</span><span>0h 0m</span></div>
-
-      <!-- 제출/리셋 자리(V1에선 비활성) -->
-      <form id="schedule-form" hx-post="/schedule/submit" hx-target="#status-banner" hx-swap="outerHTML">
-        <input type="hidden" name="schedule_json" id="schedule-json" />
-        <div style="margin-top:1rem; display:flex; gap:.5rem;">
-          <button type="submit" id="btn-submit" disabled>Submit for Approval</button>
-          <button type="button" id="btn-reset">Reset</button>
-        </div>
-      </form>
-
-    </div>
-  </aside>
-</div>
-<script>
-(function () {
-  // ----- 설정 -----
-  const SLOTS_PER_DAY = 60;          // 8:00~18:00, 10분 단위
-  const DAY_START_MIN = 8 * 60;      // 8:00 = 480분
-  const MIN_SHIFT_MIN = 3 * 60;      // 최소 3시간
-  const MAX_DAILY_MIN = 9 * 60;      // 하루 최대 9시간
-  const MIN_WEEKLY_MIN = 20 * 60;    // 주 20시간
-  const MAX_WEEKLY_MIN = 40 * 60;    // 주 40시간
-
-  let lastSubmittedJSON = null;   // 성공 제출된 페이로드 문자열
-  let lastValidationOK = false;   // 직전 검증 결과
-
-  // --- 편집 잠금 상태 제어 ---
-  let editingLocked = false;
-  function setLockedUI(lock) {
-    editingLocked = lock;
-    document.querySelectorAll('.day-row .hours')
-      .forEach(el => el.classList.toggle('locked', lock));
-  }
-  function isApprovedStatus() {
-    const banner = document.getElementById('status-banner');
-    const v = (banner?.dataset?.status || banner?.textContent || '').toLowerCase();
-    return v.includes('approved');
-  }
-
-  function readSavedSchedule() {
-    const el = document.getElementById('saved-schedule');
-    if (!el) return null;
-    const txt = (el.textContent || '').trim();
-    if (!txt) return null;
-    try { return JSON.parse(txt); } catch { return null; }
-  }
-
-  // ===== 서버 저장본으로 그리드 복원 =====
-  function hhmmToMinutes(str) {
-    const [h, m] = str.split(':').map(Number);
-    return h * 60 + m;
-  }
-  function hydrateFromSaved(saved) {
-    if (!saved || !saved.days) return;
-
-    // 요일 라벨 -> hours 엘리먼트를 빠르게 찾기
-    const dayMap = {};
-    document.querySelectorAll('.day-row').forEach((row) => {
-      const label = row.querySelector('.label')?.textContent?.trim();
-      const hoursEl = row.querySelector('.hours');
-      if (label && hoursEl) dayMap[label] = hoursEl;
-    });
-
-    // 각 요일의 interval을 10분 슬롯으로 펼쳐서 .slot 생성
-    saved.days.forEach((d) => {
-      const hoursEl = dayMap[d.day];
-      if (!hoursEl || !Array.isArray(d.intervals)) return;
-
-      d.intervals.forEach((seg) => {
-        const sMin = hhmmToMinutes(seg.start);
-        const eMin = hhmmToMinutes(seg.end);
-
-        // 08:00(480) 기준 10분 인덱스 [sIdx, eIdx)
-        let sIdx = Math.floor((sMin - DAY_START_MIN) / 10);
-        let eIdx = Math.floor((eMin - DAY_START_MIN) / 10);
-
-        // 범위 클램프
-        if (sIdx < 0) sIdx = 0;
-        if (sIdx > SLOTS_PER_DAY) sIdx = SLOTS_PER_DAY;
-        if (eIdx < 0) eIdx = 0;
-        if (eIdx > SLOTS_PER_DAY) eIdx = SLOTS_PER_DAY;
-
-        for (let idx = sIdx; idx < eIdx; idx++) {
-          // 이미 있으면 스킵
-          if (hoursEl.querySelector(`.slot[data-slot="${idx}"]`)) continue;
-          const slot = document.createElement('div');
-          slot.className = 'slot';
-          slot.dataset.slot = String(idx);
-          const widthPct = 100 / SLOTS_PER_DAY;
-          slot.style.left = (idx * widthPct) + '%';
-          slot.style.width = widthPct + '%';
-          hoursEl.appendChild(slot);
-        }
-      });
-    });
-  }
-
-  // ---- 서버 저장본 Hydrate (모든 바인딩/상수 초기화 후) ----
-  try {
-    const saved = readSavedSchedule();
-    if (saved) {
-      hydrateFromSaved(saved);
-      // 상태에 따른 baseline 설정:
-      const status = (document.getElementById('status-banner')?.dataset?.status || '').toLowerCase();
-      if (status.includes('approved') || status.includes('pending')) {
-        lastSubmittedJSON = JSON.stringify(saved); // 승인/대기 중인 서버 저장본을 기준선으로
+    @media (max-width: 900px) {
+      .page {
+        grid-template-columns: 1fr;
       }
     }
-  } catch (e) {
-    console.error('hydrate failed:', e);
-  }
 
-
-
-  const DAY_ROWS = Array.from(document.querySelectorAll('.day-row')); // Mon~Fri
-  const TOTAL_ROWS = Array.from(document.querySelectorAll('.totals .list .row'));
-  const WEEKLY_TOTAL_SPAN = document.querySelector('.totals .weekly span:last-child');
-  const VALID_BANNER = document.getElementById('validation-banner');
-  const SUBMIT_BTN = document.getElementById('btn-submit');
-  const RESET_BTN = document.getElementById('btn-reset');
-  const FORM = document.getElementById('schedule-form');
-  const JSON_INPUT = document.getElementById('schedule-json');
-
-  // ----- 유틸 -----
-  const fmt = (min) => `${Math.floor(min / 60)}h ${min % 60}m`;
-  const pad2 = (n) => (n < 10 ? '0' + n : '' + n);
-  function indexToTime(idx) {
-    const total = DAY_START_MIN + idx * 10;
-    const h = Math.floor(total / 60);
-    const m = total % 60;
-    return `${pad2(h)}:${pad2(m)}`;
-  }
-  function getDayLabel(row) {
-    const t = row.querySelector('.label')?.textContent?.trim() || '';
-    return t; // 'Mon' 등
-  }
-  function getHoursEl(row) {
-    return row.querySelector('.hours');
-  }
-  function getSelectedIndices(hoursEl) {
-    return Array.from(hoursEl.querySelectorAll('.slot'))
-      .map(el => parseInt(el.dataset.slot, 10))
-      .filter(Number.isFinite)
-      .sort((a,b)=>a-b);
-  }
-  // 연속 슬롯을 구간으로 변환
-  function indicesToIntervals(indices) {
-    const out = [];
-    if (!indices.length) return out;
-    let start = indices[0];
-    let prev = indices[0];
-    for (let i = 1; i < indices.length; i++) {
-      const idx = indices[i];
-      if (idx === prev + 1) {
-        prev = idx;
-        continue;
-      }
-      // [start, prev]까지가 한 구간(끝은 prev+1로 취급)
-      out.push([start, prev + 1]);
-      start = idx;
-      prev = idx;
+    .hours {
+      position: relative;
+    } 
+    .hours .slot {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      background: #002E5D;
+      z-index: 1;
+      outline: none;
     }
-    out.push([start, prev + 1]);
-    return out;
-  }
-  function intervalsToPayload(intervals) {
-    // [{startIdx,endIdx}] -> [{start:"HH:MM", end:"HH:MM", minutes}]
-    return intervals.map(([s, e]) => {
-      const minutes = (e - s) * 10;
-      return { start: indexToTime(s), end: indexToTime(e), minutes };
-    });
-  }
 
-  // ----- 합계 -----
-  function recalcTotals() {
-    let weeklyMin = 0;
-    DAY_ROWS.forEach((row, i) => {
-      const hoursEl = getHoursEl(row);
-      const mins = hoursEl.querySelectorAll('.slot').length * 10;
-      weeklyMin += mins;
-      const rightSpan = TOTAL_ROWS[i]?.querySelector('span:last-child');
-      if (rightSpan) rightSpan.textContent = fmt(mins);
-    });
-    if (WEEKLY_TOTAL_SPAN) WEEKLY_TOTAL_SPAN.textContent = fmt(weeklyMin);
-  }
+    #validation-banner {
+      background: #fff0f0;
+      color: #b00020;
+      min-height: 44px;
+      display: block;        
+      visibility: hidden;   
+      opacity: 0;         
+      transition: opacity 120ms ease-in;
+      margin-bottom: 1rem;   
+      white-space: normal;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      overflow-wrap: anywhere;
+    }
 
-  // ----- 스케줄 JSON 생성 -----
-  function buildSchedule() {
-    let weeklyMin = 0;
-    const days = DAY_ROWS.map((row) => {
-      const day = getDayLabel(row);
-      const hoursEl = getHoursEl(row);
-      const indices = getSelectedIndices(hoursEl);
-      const intervalsIdx = indicesToIntervals(indices);
-      const intervals = intervalsToPayload(intervalsIdx);
-      const totalMinutes = indices.length * 10;
-      weeklyMin += totalMinutes;
-      return { day, intervals, totalMinutes };
-    });
-    return { days, weeklyTotalMinutes: weeklyMin };
-  }
+    /* 에러 있을 때만 보이게 */
+    #validation-banner.show {
+      visibility: visible;
+      opacity: 1;
+    }
 
-  // ----- 프론트 유효성 검사 -----
-  function validateSchedule(schedule) {
-    const errors = [];
+    .day-row .hours.locked {
+      pointer-events: none;
+      cursor: not-allowed;
+    }
 
-    let hasShortShift = false;     // 3시간 미만 구간 존재 여부
-    let hasOverDailyMax = false;   // 하루 총 9시간 초과 존재 여부
+    #review-banner {
+      background: #fdecec;
+      color: #8a0000;
+      display: none;
+      margin-bottom: 1rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    #review-banner.show {
+      display: block;
+    }
 
-    for (const d of schedule.days) {
-      // 하루 총 9시간 초과?
-      if (d.totalMinutes > MAX_DAILY_MIN) hasOverDailyMax = true;
+    /* Submit / Reset 버튼 공통 스타일 */
+    #schedule-form button {
+      font-family: "IBM Plex Sans", Helvetica, Arial, sans-serif;
+      background: #002E5D;
+      color: #fff;
+      border: none;            
+      border-radius: 5px;     
+      padding: .55rem .9rem;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    #schedule-form button:hover:not(:disabled) {
+      opacity: .92;
+    }
+    #schedule-form button:disabled {
+      opacity: .5;
+      cursor: not-allowed;
+    }
+    #schedule-form button:focus-visible {
+      outline: 2px solid #c9d7ea;
+      outline-offset: 2px;
+    }
+  </style>
 
-      // 구간 3시간 미만?
-      if (!hasShortShift) {
-        for (const seg of d.intervals) {
-          if (seg.minutes > 0 && seg.minutes < MIN_SHIFT_MIN) {
-            hasShortShift = true;
-            break;
+  <div class="page">
+    <!-- 좌측: 스케줄 편집 영역 -->
+    <section class="card">
+      <div class="body">
+        <div class="status-banner" id="status-banner" data-status="{{.Status}}">
+          Status: {{if eq .Status "Pending"}}Pending Approval{{else}}{{.Status}}{{end}}
+        </div>
+        <div class="status-banner validation" id="validation-banner" aria-live="polite"></div>
+
+        <div class="status-banner review {{if .RejectComment}}show{{end}}" id="review-banner" aria-live="polite">
+          {{if .RejectComment}}Reason for Rejection: {{.RejectComment}}{{end}}
+        </div>
+
+        <script id="saved-schedule" type="application/json">{{.SavedJSON}}</script>
+
+        <div class="week">
+          <div class="header">
+            <div class="label">Day</div>
+            <div>8:00</div>
+            <div>9:00</div>
+            <div>10:00</div>
+            <div>11:00</div>
+            <div>12:00</div>
+            <div>1:00</div>
+            <div>2:00</div>
+            <div>3:00</div>
+            <div>4:00</div>
+            <div>5:00</div>
+          </div>
+
+          
+          <div class="day-row">
+            <div class="label">Mon</div>
+            <div class="hours"></div>
+          </div>
+          <div class="day-row">
+            <div class="label">Tue</div>
+            <div class="hours"></div>
+          </div>
+          <div class="day-row">
+            <div class="label">Wed</div>
+            <div class="hours"></div>
+          </div>
+          <div class="day-row">
+            <div class="label">Thu</div>
+            <div class="hours"></div>
+          </div>
+          <div class="day-row">
+            <div class="label">Fri</div>
+            <div class="hours"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    
+    <aside class="card totals">
+      <div class="body">
+        <h3>Totals</h3>
+        <div class="list">
+          <div class="row"><span>Mon</span><span>0h 0m</span></div>
+          <div class="row"><span>Tue</span><span>0h 0m</span></div>
+          <div class="row"><span>Wed</span><span>0h 0m</span></div>
+          <div class="row"><span>Thu</span><span>0h 0m</span></div>
+          <div class="row"><span>Fri</span><span>0h 0m</span></div>
+        </div>
+        <div class="weekly row"><span>Weekly Total</span><span>0h 0m</span></div>
+
+        
+        <form id="schedule-form" hx-post="/schedule/submit" hx-target="#status-banner" hx-swap="outerHTML">
+          <input type="hidden" name="schedule_json" id="schedule-json" />
+          <div style="margin-top:1rem; display:flex; gap:.5rem;">
+            <button type="submit" id="btn-submit" disabled>Submit for Approval</button>
+            <button type="button" id="btn-reset">Reset</button>
+          </div>
+        </form>
+      </div>
+    </aside>
+  </div>
+  <script>
+    (function () {
+      const SLOTS_PER_DAY = 60;      
+      const DAY_START_MIN = 8 * 60;  
+      const MIN_SHIFT_MIN = 3 * 60;   
+      const MAX_DAILY_MIN = 9 * 60;   
+      const MIN_WEEKLY_MIN = 20 * 60;   
+      const MAX_WEEKLY_MIN = 40 * 60;   
+
+      let lastSubmittedJSON = null;  
+      let lastValidationOK = false;   
+
+      // --- 편집 잠금 상태 제어 ---
+      let editingLocked = false;
+      function setLockedUI(lock) {
+        editingLocked = lock;
+        document.querySelectorAll('.day-row .hours')
+          .forEach(el => el.classList.toggle('locked', lock));
+      }
+      function isApprovedStatus() {
+        const banner = document.getElementById('status-banner');
+        const v = (banner?.dataset?.status || banner?.textContent || '').toLowerCase();
+        return v.includes('approved');
+      }
+
+      function readSavedSchedule() {
+        const el = document.getElementById('saved-schedule');
+        if (!el) return null;
+        const txt = (el.textContent || '').trim();
+        if (!txt) return null;
+        try { return JSON.parse(txt); } catch { return null; }
+      }
+
+      // ===== 서버 저장본으로 그리드 복원 =====
+      function hhmmToMinutes(str) {
+        const [h, m] = str.split(':').map(Number);
+        return h * 60 + m;
+      }
+      function hydrateFromSaved(saved) {
+        if (!saved || !saved.days) return;
+
+        
+        const dayMap = {};
+        document.querySelectorAll('.day-row').forEach((row) => {
+          const label = row.querySelector('.label')?.textContent?.trim();
+          const hoursEl = row.querySelector('.hours');
+          if (label && hoursEl) dayMap[label] = hoursEl;
+        });
+
+        // 각 요일의 interval을 10분 슬롯으로 펼쳐서 .slot 생성
+        saved.days.forEach((d) => {
+          const hoursEl = dayMap[d.day];
+          if (!hoursEl || !Array.isArray(d.intervals)) return;
+
+          d.intervals.forEach((seg) => {
+            const sMin = hhmmToMinutes(seg.start);
+            const eMin = hhmmToMinutes(seg.end);
+
+            
+            let sIdx = Math.floor((sMin - DAY_START_MIN) / 10);
+            let eIdx = Math.floor((eMin - DAY_START_MIN) / 10);
+
+            
+            if (sIdx < 0) sIdx = 0;
+            if (sIdx > SLOTS_PER_DAY) sIdx = SLOTS_PER_DAY;
+            if (eIdx < 0) eIdx = 0;
+            if (eIdx > SLOTS_PER_DAY) eIdx = SLOTS_PER_DAY;
+
+            for (let idx = sIdx; idx < eIdx; idx++) {
+              // 이미 있으면 스킵
+              if (hoursEl.querySelector(`.slot[data-slot="${idx}"]`)) continue;
+              const slot = document.createElement('div');
+              slot.className = 'slot';
+              slot.dataset.slot = String(idx);
+              const widthPct = 100 / SLOTS_PER_DAY;
+              slot.style.left = (idx * widthPct) + '%';
+              slot.style.width = widthPct + '%';
+              hoursEl.appendChild(slot);
+            }
+          });
+        });
+      }
+
+      // ---- 서버 저장본 Hydrate (모든 바인딩/상수 초기화 후) ----
+      try {
+        const saved = readSavedSchedule();
+        if (saved) {
+          hydrateFromSaved(saved);
+          // 상태에 따른 baseline 설정:
+          const status = (document.getElementById('status-banner')?.dataset?.status || '').toLowerCase();
+          if (status.includes('approved') || status.includes('pending')) {
+            lastSubmittedJSON = JSON.stringify(saved); // 승인/대기 중인 서버 저장본을 기준선으로
           }
         }
+      } catch (e) {
+        console.error('hydrate failed:', e);
       }
-    }
 
-    if (hasShortShift) {
-      errors.push('A shift should be more than 3 hours.');
-    }
-    if (hasOverDailyMax) {
-      errors.push('A day\'s total working hours must not exceed 9 hours.');
-    }
+      const DAY_ROWS = Array.from(document.querySelectorAll('.day-row')); 
+      const TOTAL_ROWS = Array.from(document.querySelectorAll('.totals .list .row'));
+      const WEEKLY_TOTAL_SPAN = document.querySelector('.totals .weekly span:last-child');
+      const VALID_BANNER = document.getElementById('validation-banner');
+      const SUBMIT_BTN = document.getElementById('btn-submit');
+      const RESET_BTN = document.getElementById('btn-reset');
+      const FORM = document.getElementById('schedule-form');
+      const JSON_INPUT = document.getElementById('schedule-json');
 
-    // 주간 20~40시간
-    if (schedule.weeklyTotalMinutes < MIN_WEEKLY_MIN || schedule.weeklyTotalMinutes > MAX_WEEKLY_MIN) {
-      errors.push(`Weekly Total: ${fmt(schedule.weeklyTotalMinutes)} (Required Hours: ${fmt(MIN_WEEKLY_MIN)} – ${fmt(MAX_WEEKLY_MIN)})`);
-    }
-
-    return { ok: errors.length === 0, errors };
-  }
-
-  function showValidation(result) {
-    lastValidationOK = result.ok; // 상태 보관
-
-    if (result.ok) {
-      VALID_BANNER.textContent = '';
-      VALID_BANNER.classList.remove('show');
-    } else {
-      VALID_BANNER.textContent = 'Validation: ' + result.errors.slice(0, 2).join(' | ');
-      VALID_BANNER.classList.add('show');
-    }
-}
-
-  function refreshValidationAndPayload() {
-    recalcTotals();
-  const schedule = buildSchedule();
-  const scheduleJSON = JSON.stringify(schedule);
-  JSON_INPUT.value = scheduleJSON;
-
-  const result = validateSchedule(schedule);
-  showValidation(result);
-
-  // --- 제출 가능 조건 계산 ---
-  const approved = isApprovedStatus();
-  const dirty = (lastSubmittedJSON === null) ? (scheduleJSON !== 'null' && scheduleJSON !== '{"days":[],"weeklyTotalMinutes":0}')
-                                            : (scheduleJSON !== lastSubmittedJSON);
-
-  // 조건: ① 검증 통과 ② Approved 아님 ③ dirty 해야 함
-  const canSubmit = result.ok && !approved && dirty;
-
-  SUBMIT_BTN.disabled = !canSubmit;
-
-  return result;
-  }
-
-  // ----- 슬롯 그리기/지우기(드래그 토글) -----
-  function createSlot(idx) {
-    const slot = document.createElement('div');
-    slot.className = 'slot';
-    slot.dataset.slot = String(idx);
-    const widthPct = 100 / SLOTS_PER_DAY;
-    slot.style.left = (idx * widthPct) + '%';
-    slot.style.width = widthPct + '%';
-    return slot;
-  }
-  function indexFromEvent(ev, el) {
-    const rect = el.getBoundingClientRect();
-    const clientX = ev.touches ? ev.touches[0].clientX : ev.clientX;
-
-    // 컨테이너 기준 x
-    let x = clientX - rect.left;
-
-    // 경계 보정: 오른쪽 끝에서 idx=60 방지
-    if (x < 0) x = 0;
-    if (x >= rect.width) x = rect.width - 0.0001;
-
-    const ratio = x / rect.width;
-
-    // 0 ≤ idx ≤ 59 로 클램프
-    let idx = Math.floor(ratio * SLOTS_PER_DAY); // SLOTS_PER_DAY = 60
-    if (idx < 0) idx = 0;
-    if (idx >= SLOTS_PER_DAY) idx = SLOTS_PER_DAY - 1;
-
-    return idx;
-  }
-
-  document.querySelectorAll('.day-row .hours').forEach((hoursEl) => {
-    let isDragging = false;
-    let dragMode = null; // 'paint' | 'erase'
-    let lastIndex = null;
-    let suppressNextClick = false;
-
-    hoursEl.addEventListener('click', (ev) => {
-      if (editingLocked) return;
-      if (suppressNextClick) {
-        ev.preventDefault();
-        ev.stopImmediatePropagation();
-        suppressNextClick = false;
-        return;
+      
+      const fmt = (min) => `${Math.floor(min / 60)}h ${min % 60}m`;
+      const pad2 = (n) => (n < 10 ? '0' + n : '' + n);
+      function indexToTime(idx) {
+        const total = DAY_START_MIN + idx * 10;
+        const h = Math.floor(total / 60);
+        const m = total % 60;
+        return `${pad2(h)}:${pad2(m)}`;
       }
-      if (isDragging) return;
-      const idx = indexFromEvent(ev, hoursEl);
-      const existing = hoursEl.querySelector(`.slot[data-slot="${idx}"]`);
-      if (existing) existing.remove();
-      else hoursEl.appendChild(createSlot(idx));
-      refreshValidationAndPayload();
-    }, true);
-
-    const applyAtIndex = (idx) => {
-      const existing = hoursEl.querySelector(`.slot[data-slot="${idx}"]`);
-      if (dragMode === 'erase') {
-        if (existing) existing.remove();
-      } else {
-        if (!existing) hoursEl.appendChild(createSlot(idx));
+      function getDayLabel(row) {
+        const t = row.querySelector('.label')?.textContent?.trim() || '';
+        return t; 
       }
-    };
+      function getHoursEl(row) {
+        return row.querySelector('.hours');
+      }
+      function getSelectedIndices(hoursEl) {
+        return Array.from(hoursEl.querySelectorAll('.slot'))
+          .map(el => parseInt(el.dataset.slot, 10))
+          .filter(Number.isFinite)
+          .sort((a,b)=>a-b);
+      }
+      // 연속 슬롯을 구간으로 변환
+      function indicesToIntervals(indices) {
+        const out = [];
+        if (!indices.length) return out;
+        let start = indices[0];
+        let prev = indices[0];
+        for (let i = 1; i < indices.length; i++) {
+          const idx = indices[i];
+          if (idx === prev + 1) {
+            prev = idx;
+            continue;
+          }
+          // [start, prev]까지가 한 구간(끝은 prev+1로 취급)
+          out.push([start, prev + 1]);
+          start = idx;
+          prev = idx;
+        }
+        out.push([start, prev + 1]);
+        return out;
+      }
+      function intervalsToPayload(intervals) {
+        // [{startIdx,endIdx}] -> [{start:"HH:MM", end:"HH:MM", minutes}]
+        return intervals.map(([s, e]) => {
+          const minutes = (e - s) * 10;
+          return { start: indexToTime(s), end: indexToTime(e), minutes };
+        });
+      }
 
-    const onStart = (ev) => {
-      if (editingLocked) return;
-      isDragging = true;
-      dragMode = null;
-      lastIndex = null;
-      const idx = indexFromEvent(ev, hoursEl);
-      const existing = hoursEl.querySelector(`.slot[data-slot="${idx}"]`);
-      dragMode = existing ? 'erase' : 'paint';
-      applyAtIndex(idx);
-      lastIndex = idx;
+      // ----- 합계 -----
+      function recalcTotals() {
+        let weeklyMin = 0;
+        DAY_ROWS.forEach((row, i) => {
+          const hoursEl = getHoursEl(row);
+          const mins = hoursEl.querySelectorAll('.slot').length * 10;
+          weeklyMin += mins;
+          const rightSpan = TOTAL_ROWS[i]?.querySelector('span:last-child');
+          if (rightSpan) rightSpan.textContent = fmt(mins);
+        });
+        if (WEEKLY_TOTAL_SPAN) WEEKLY_TOTAL_SPAN.textContent = fmt(weeklyMin);
+      }
+
+      // ----- 스케줄 JSON 생성 -----
+      function buildSchedule() {
+        let weeklyMin = 0;
+        const days = DAY_ROWS.map((row) => {
+          const day = getDayLabel(row);
+          const hoursEl = getHoursEl(row);
+          const indices = getSelectedIndices(hoursEl);
+          const intervalsIdx = indicesToIntervals(indices);
+          const intervals = intervalsToPayload(intervalsIdx);
+          const totalMinutes = indices.length * 10;
+          weeklyMin += totalMinutes;
+          return { day, intervals, totalMinutes };
+        });
+        return { days, weeklyTotalMinutes: weeklyMin };
+      }
+
+      // ----- 프론트 유효성 검사 -----
+      function validateSchedule(schedule) {
+        const errors = [];
+
+        let hasShortShift = false;     // 3시간 미만 구간 존재 여부
+        let hasOverDailyMax = false;   // 하루 총 9시간 초과 존재 여부
+
+        for (const d of schedule.days) {
+          // 하루 총 9시간 초과?
+          if (d.totalMinutes > MAX_DAILY_MIN) hasOverDailyMax = true;
+
+          // 구간 3시간 미만?
+          if (!hasShortShift) {
+            for (const seg of d.intervals) {
+              if (seg.minutes > 0 && seg.minutes < MIN_SHIFT_MIN) {
+                hasShortShift = true;
+                break;
+              }
+            }
+          }
+        }
+
+        if (hasShortShift) {
+          errors.push('A shift should be more than 3 hours.');
+        }
+        if (hasOverDailyMax) {
+          errors.push('A day\'s total working hours must not exceed 9 hours.');
+        }
+
+        
+        if (schedule.weeklyTotalMinutes < MIN_WEEKLY_MIN || schedule.weeklyTotalMinutes > MAX_WEEKLY_MIN) {
+          errors.push(`Weekly Total: ${fmt(schedule.weeklyTotalMinutes)} (Required Hours: ${fmt(MIN_WEEKLY_MIN)} – ${fmt(MAX_WEEKLY_MIN)})`);
+        }
+
+        return { ok: errors.length === 0, errors };
+      }
+
+      function showValidation(result) {
+        lastValidationOK = result.ok; // 상태 보관
+
+        if (result.ok) {
+          VALID_BANNER.textContent = '';
+          VALID_BANNER.classList.remove('show');
+        } else {
+          VALID_BANNER.textContent = 'Validation: ' + result.errors.slice(0, 2).join(' | ');
+          VALID_BANNER.classList.add('show');
+        }
+      }
+
+      function refreshValidationAndPayload() {
+        recalcTotals();
+        const schedule = buildSchedule();
+        const scheduleJSON = JSON.stringify(schedule);
+        JSON_INPUT.value = scheduleJSON;
+
+        const result = validateSchedule(schedule);
+        showValidation(result);
+
+        // --- 제출 가능 조건 계산 ---
+        const approved = isApprovedStatus();
+        const dirty = (lastSubmittedJSON === null)
+          ? (scheduleJSON !== 'null' && scheduleJSON !== '{"days":[],"weeklyTotalMinutes":0}')
+          : (scheduleJSON !== lastSubmittedJSON);
+
+        
+        const canSubmit = result.ok && !approved && dirty;
+
+        SUBMIT_BTN.disabled = !canSubmit;
+
+        return result;
+      }
+
+      
+      function createSlot(idx) {
+        const slot = document.createElement('div');
+        slot.className = 'slot';
+        slot.dataset.slot = String(idx);
+        const widthPct = 100 / SLOTS_PER_DAY;
+        slot.style.left = (idx * widthPct) + '%';
+        slot.style.width = widthPct + '%';
+        return slot;
+      }
+      function indexFromEvent(ev, el) {
+        const rect = el.getBoundingClientRect();
+        const clientX = ev.touches ? ev.touches[0].clientX : ev.clientX;
+
+        
+        let x = clientX - rect.left;
+
+        // 경계 보정: 오른쪽 끝에서 idx=60 방지
+        if (x < 0) x = 0;
+        if (x >= rect.width) x = rect.width - 0.0001;
+
+        const ratio = x / rect.width;
+
+        
+        let idx = Math.floor(ratio * SLOTS_PER_DAY);
+        if (idx < 0) idx = 0;
+        if (idx >= SLOTS_PER_DAY) idx = SLOTS_PER_DAY - 1;
+
+        return idx;
+      }
+
+      document.querySelectorAll('.day-row .hours').forEach((hoursEl) => {
+        let isDragging = false;
+        let dragMode = null;
+        let lastIndex = null;
+        let suppressNextClick = false;
+
+        hoursEl.addEventListener('click', (ev) => {
+          if (editingLocked) return;
+          if (suppressNextClick) {
+            ev.preventDefault();
+            ev.stopImmediatePropagation();
+            suppressNextClick = false;
+            return;
+          }
+          if (isDragging) return;
+          const idx = indexFromEvent(ev, hoursEl);
+          const existing = hoursEl.querySelector(`.slot[data-slot="${idx}"]`);
+          if (existing) existing.remove();
+          else hoursEl.appendChild(createSlot(idx));
+          refreshValidationAndPayload();
+        }, true);
+
+        const applyAtIndex = (idx) => {
+          const existing = hoursEl.querySelector(`.slot[data-slot="${idx}"]`);
+          if (dragMode === 'erase') {
+            if (existing) existing.remove();
+          } else {
+            if (!existing) hoursEl.appendChild(createSlot(idx));
+          }
+        };
+
+        const onStart = (ev) => {
+          if (editingLocked) return;
+          isDragging = true;
+          dragMode = null;
+          lastIndex = null;
+          const idx = indexFromEvent(ev, hoursEl);
+          const existing = hoursEl.querySelector(`.slot[data-slot="${idx}"]`);
+          dragMode = existing ? 'erase' : 'paint';
+          applyAtIndex(idx);
+          lastIndex = idx;
+          refreshValidationAndPayload();
+        };
+
+        const onMove = (ev) => {
+          if (!isDragging) return;
+          const idx = indexFromEvent(ev, hoursEl);
+          if (idx === lastIndex) return;
+          lastIndex = idx;
+          applyAtIndex(idx);
+          refreshValidationAndPayload();
+        };
+
+        const onEnd = () => {
+          isDragging = false;
+          dragMode = null;
+          lastIndex = null;
+          suppressNextClick = true; // 드래그 후 click 1회 무시
+          refreshValidationAndPayload();
+        };
+
+        hoursEl.addEventListener('mousedown', onStart);
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onEnd);
+
+        hoursEl.addEventListener('touchstart', onStart, { passive: true });
+        window.addEventListener('touchmove', onMove, { passive: true });
+        window.addEventListener('touchend', onEnd);
+        window.addEventListener('touchcancel', onEnd);
+
+        hoursEl.style.userSelect = 'none';
+      });
+
+      // ----- Reset 버튼 -----
+      if (RESET_BTN) {
+        RESET_BTN.addEventListener('click', () => {
+          // 전부 지우기
+          document.querySelectorAll('.day-row .hours .slot').forEach(el => el.remove());
+
+          // 🔹 반려 사유 감추기
+          const rb = document.getElementById('review-banner');
+          if (rb) {
+            rb.textContent = '';
+            rb.classList.remove('show');
+          }
+
+          // 🔹 잠금 해제
+          setLockedUI(false);
+
+          // 🔹 배너를 Draft 스타일로 되돌림(로컬 UI 갱신)
+          const banner = document.getElementById('status-banner');
+          if (banner) {
+            banner.textContent = 'Status: Draft';
+            banner.dataset.status = 'Draft';
+            banner.style.background = '#eef5ff';
+            banner.style.color = '#002E5D';
+          }
+
+          // 합계/검증 갱신
+          lastSubmittedJSON = null;
+          refreshValidationAndPayload();
+        });
+      }
+
+      // ----- Submit 처리 (프론트 검증 → 통과 시 HTMX 제출) -----
+      if (FORM) {
+        FORM.addEventListener('submit', (e) => {
+          const approved = isApprovedStatus();
+          const result = refreshValidationAndPayload();
+          if (approved || SUBMIT_BTN.disabled || !result.ok) {
+            e.preventDefault();
+            e.stopPropagation();
+          }
+        });
+      }
+
+      // ----- HTMX 응답 후 상태배너 갱신 (200대면 Pending으로 표시) -----
+      document.body.addEventListener('htmx:afterRequest', (e) => {
+        const xhr = e.detail && e.detail.xhr;
+        if (xhr && xhr.status >= 200 && xhr.status < 300) {
+          const banner = document.getElementById('status-banner');
+          if (banner) {
+            banner.textContent = 'Status: Pending Approval';
+            banner.dataset.status = 'Pending';
+          }
+
+          // 제출 직후 스냅샷 고정 → 변경 전까지 재제출 불가
+          const snap = buildSchedule();
+          lastSubmittedJSON = JSON.stringify(snap);
+
+          // 반려 배너 숨김
+          const rb = document.getElementById('review-banner');
+          if (rb) {
+            rb.textContent = '';
+            rb.classList.remove('show');
+          }
+
+          // Pending이면 편집은 허용 (요구사항)
+          setLockedUI(false);
+
+          // 버튼 상태 재계산
+          refreshValidationAndPayload();
+        }
+      });
+
+      // ---- 서버 저장본 Hydrate (모든 바인딩/상수 초기화 후) ----
+      try {
+        const saved = readSavedSchedule();
+        if (saved) {
+          hydrateFromSaved(saved);
+        }
+      } catch (e) {
+        console.error('hydrate failed:', e);
+      }
+
+      // 서버 상태가 Approved면 편집 잠금
+      setLockedUI(isApprovedStatus());
+
+      // 초기 표시
       refreshValidationAndPayload();
-    };
-
-    const onMove = (ev) => {
-      if (!isDragging) return;
-      const idx = indexFromEvent(ev, hoursEl);
-      if (idx === lastIndex) return;
-      lastIndex = idx;
-      applyAtIndex(idx);
-      refreshValidationAndPayload();
-    };
-
-    const onEnd = () => {
-      isDragging = false;
-      dragMode = null;
-      lastIndex = null;
-      suppressNextClick = true; // 드래그 후 click 1회 무시
-      refreshValidationAndPayload();
-    };
-
-    hoursEl.addEventListener('mousedown', onStart);
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onEnd);
-
-    hoursEl.addEventListener('touchstart', onStart, { passive: true });
-    window.addEventListener('touchmove', onMove, { passive: true });
-    window.addEventListener('touchend', onEnd);
-    window.addEventListener('touchcancel', onEnd);
-
-    hoursEl.style.userSelect = 'none';
-  });
-
-  // ----- Reset 버튼 -----
-  if (RESET_BTN) {
-  RESET_BTN.addEventListener('click', () => {
-    // 전부 지우기
-    document.querySelectorAll('.day-row .hours .slot').forEach(el => el.remove());
-
-    // 🔹 반려 사유 감추기
-    const rb = document.getElementById('review-banner');
-    if (rb) { rb.textContent = ''; rb.classList.remove('show'); }
-
-    // 🔹 잠금 해제
-    setLockedUI(false);
-
-    // 🔹 배너를 Draft 스타일로 되돌림(로컬 UI 갱신)
-    const banner = document.getElementById('status-banner');
-    if (banner) {
-      banner.textContent = 'Status: Draft';
-      banner.dataset.status = 'Draft';
-      banner.style.background = '#eef5ff';
-      banner.style.color = '#002E5D';
-    }
-
-    // 합계/검증 갱신
-    lastSubmittedJSON = null;
-    refreshValidationAndPayload();
-  });
-}
-
-
-  // ----- Submit 처리 (프론트 검증 → 통과 시 HTMX 제출) -----
-  if (FORM) {
-    FORM.addEventListener('submit', (e) => {
-    const approved = isApprovedStatus();
-    const result = refreshValidationAndPayload();
-    if (approved || SUBMIT_BTN.disabled || !result.ok) {
-      e.preventDefault();
-      e.stopPropagation();
-    }
-  });
-  }
-
-  // ----- HTMX 응답 후 상태배너 갱신 (200대면 Pending으로 표시) -----
-  document.body.addEventListener('htmx:afterRequest', (e) => {
-    const xhr = e.detail && e.detail.xhr;
-  if (xhr && xhr.status >= 200 && xhr.status < 300) {
-    const banner = document.getElementById('status-banner');
-    if (banner) {
-      banner.textContent = 'Status: Pending Approval';
-      banner.dataset.status = 'Pending';
-    }
-
-    // 제출 직후 스냅샷 고정 → 변경 전까지 재제출 불가
-    const snap = buildSchedule();
-    lastSubmittedJSON = JSON.stringify(snap);
-
-    // 반려 배너 숨김
-    const rb = document.getElementById('review-banner');
-    if (rb) { rb.textContent = ''; rb.classList.remove('show'); }
-
-    // Pending이면 편집은 허용 (요구사항)
-    setLockedUI(false);
-
-    // 버튼 상태 재계산
-    refreshValidationAndPayload();
-  }
-  });
-
-  // ---- 서버 저장본 Hydrate (모든 바인딩/상수 초기화 후) ----
-  try {
-    const saved = readSavedSchedule();
-    if (saved) {
-      hydrateFromSaved(saved);
-    }
-  } catch (e) {
-    console.error('hydrate failed:', e);
-  }
-
-  // 서버 상태가 Approved면 편집 잠금
-  setLockedUI(isApprovedStatus());
-
-
-  // 초기 표시
-  refreshValidationAndPayload();
-
-})();
-</script>
-
-
+    })();
+  </script>
 {{end}}
 
 {{define "schedule"}}{{template "base" .}}{{end}}

@@ -1,0 +1,111 @@
+{{define "title"}}Approvals – Shift Scheduler{{end}}
+
+{{define "content"}}
+<style>
+  .table { width:100%; border-collapse: collapse; }
+  .table th, .table td { border-bottom:1px solid #eee; padding:.6rem .5rem; text-align:left; }
+  .badge { display:inline-block; padding:.15rem .5rem; border-radius:999px; font-size:.8rem; }
+  .badge.pending { background:#fff7e0; color:#7a4b00; }
+  .badge.approved { background:#e7f7ec; color:#0b5f2a; }
+  .badge.rejected { background:#fdecec; color:#8a0000; }
+  .row-actions { display:flex; gap:.5rem; align-items:center; }
+  .row-actions input { padding:.35rem .5rem; border:1px solid #ddd; border-radius:8px; }
+  .row-actions button { padding:.4rem .7rem; border:1px solid #ddd; border-radius:8px; background:#fff; cursor:pointer; }
+  .row-actions button.approve { background:#0b5f2a; color:#fff; border-color:#0b5f2a; }
+  .row-actions button.reject { background:#8a0000; color:#fff; border-color:#8a0000; }
+  .row-actions form { display:flex; gap:.5rem; align-items:center; }
+  .row-actions input[type="text"] { min-width: 180px; }
+  .badge.expired { background:#f2f2f2; color:#555; }
+  .row-actions { 
+  display: flex; 
+  gap: .5rem; 
+  align-items: center; 
+}
+.table td, .table th { vertical-align: top; }
+/* 1) Actions 줄바꿈 허용 + 위쪽 정렬로 고정 */
+.row-actions { display:flex; gap:.5rem; align-items:flex-start; flex-wrap:wrap; }
+
+/* 2) 높이 최소치 확보(버튼 1개 + 인풋 높이만큼 공간 유지) */
+.row-actions { min-height: 40px; } /* 버튼/인풋 높이에 맞춰 36~44px 사이로 조절 */
+
+/* 3) form 기본 여백 제거 (브라우저에 따라 상하 마진이 생겨 순간 줄어듦 방지) */
+.row-actions form { display:flex; gap:.5rem; align-items:center; margin:0; }
+
+/* 4) 버튼·인풋 가로폭이 바뀌어도 줄지 않도록 최소 폭 확보 */
+.row-actions button { min-width: 90px; }
+.row-actions input[type="text"] { min-width: 180px; box-sizing: border-box; }
+
+
+
+  
+
+
+</style>
+
+<h2>Submission Approvals</h2>
+<table class="table">
+  <thead>
+    <tr>
+      <th>User</th>
+      <th>Weekly</th>
+      <th>Status</th>
+      <th>Comment</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{range .Items}}
+      {{template "approval_row" .}}
+    {{else}}
+      <tr><td colspan="5" style="color:#666;">No submissions yet.</td></tr>
+    {{end}}
+  </tbody>
+</table>
+{{end}}
+
+{{define "approval_row"}}
+<tr id="row-{{.ID}}">
+  <td>
+    <strong>{{.User}}</strong><br>
+    <small>#{{.Version}}</small>
+  </td>
+  <td>{{printf "%dh %dm" (div .Payload.WeeklyTotalMinutes 60) (mod .Payload.WeeklyTotalMinutes 60)}}</td>
+  <td>
+    {{if eq .Status "Pending"}}<span class="badge pending">Pending</span>{{end}}
+    {{if eq .Status "Approved"}}<span class="badge approved">Approved</span>{{end}}
+    {{if eq .Status "Rejected"}}<span class="badge rejected">Rejected</span>{{end}}
+    {{if eq .Status "Expired"}} <span class="badge expired">Expired</span>{{end}}
+    <br><small>{{.SubmittedAt.Format "2006-01-02 15:04"}}</small>
+  </td>
+  <td>{{.Comment}}</td>
+  <td>
+    <div class="row-actions">
+    <!-- 🔹 Approve 폼 -->
+    <form hx-post="/admin/approve" hx-target="#row-{{.ID}}" hx-swap="outerHTML">
+      <input type="hidden" name="id" value="{{.ID}}">
+      <button type="submit" class="approve" {{if ne .Status "Pending"}}disabled{{end}}>Approve</button>
+    </form>
+    <!-- 🔹 Reject 폼: 버튼 먼저, 오른쪽에 Reason -->
+    <form hx-post="/admin/reject" hx-target="#row-{{.ID}}" hx-swap="outerHTML">
+      <input type="hidden" name="id" value="{{.ID}}">
+      <!-- 처음엔 disabled. 입력값이 생기면 자동 enable -->
+      <button type="submit" class="reject"
+        {{if ne .Status "Pending"}}disabled{{else}}disabled{{end}}>Reject</button>
+      <input
+        type="text"
+        name="comment"
+        placeholder="Reason required"
+        value=""
+        {{if ne .Status "Pending"}}disabled{{end}}
+        required
+        hx-on:input="this.form.querySelector('button.reject').disabled = (this.value.trim().length === 0)"
+        hx-on:load="this.form.querySelector('button.reject').disabled = (this.value.trim().length === 0)"
+      >
+    </form>
+    </div>
+    
+  </td>
+</tr>
+{{end}}
+
+

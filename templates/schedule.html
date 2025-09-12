@@ -26,6 +26,12 @@
     font-weight: 600;
   }
 
+  /* 상태별 배너 색상 (data-status 기반) */
+  .status-banner[data-status="Draft"]    { background:#eef5ff; color:#002E5D; }
+  .status-banner[data-status="Pending"]  { background:#fff7e0; color:#7a4b00; }
+  .status-banner[data-status="Approved"] { background:#e7f7ec; color:#0b5f2a; }
+  .status-banner[data-status="Rejected"] { background:#fdecec; color:#8a0000; }
+
   /* 시간 그리드 컨테이너 */
   .week {
     padding: 1rem 1.25rem 1.5rem;
@@ -127,9 +133,10 @@
   opacity: 0;              /* 기본은 투명 */
   transition: opacity 120ms ease-in;
   margin-bottom: 1rem;     /* 아래 콘텐츠와 간격 유지 */
-  white-space: nowrap;     /* 한 줄 유지(길면 … 처리) */
+  white-space: normal;     
   overflow: hidden;
   text-overflow: ellipsis;
+  overflow-wrap: anywhere;
 }
 
 /* 에러 있을 때만 보이게 */
@@ -138,14 +145,61 @@
   opacity: 1;
 }
 
+.day-row .hours.locked { pointer-events: none; cursor: not-allowed; }
+
+#review-banner {
+  background:#fdecec;
+  color:#8a0000;
+  display:none;
+  margin-bottom:1rem;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+#review-banner.show { display:block; }
+
+/* Submit / Reset 버튼 공통 스타일 */
+#schedule-form button {
+  font-family: "IBM Plex Sans", Helvetica, Arial, sans-serif;
+  background: #002E5D;
+  color: #fff;
+  border: none;              /* 테두리 제거 */
+  border-radius: 8px;        /* 모서리 라운드(원하면 조정) */
+  padding: .55rem .9rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* 상태에 따른 상호작용 */
+#schedule-form button:hover:not(:disabled) { opacity: .92; }
+#schedule-form button:disabled { opacity: .5; cursor: not-allowed; }
+
+/* 접근성 포커스(선택 사항) */
+#schedule-form button:focus-visible {
+  outline: 2px solid #c9d7ea;
+  outline-offset: 2px;
+}
+
+
+
 </style>
 
 <div class="page">
   <!-- 좌측: 스케줄 편집 영역 -->
   <section class="card">
     <div class="body">
-      <div class="status-banner" id="status-banner">Status: Draft</div>
+      <div class="status-banner" id="status-banner" data-status="{{.Status}}">
+        Status: {{if eq .Status "Pending"}}Pending Approval{{else}}{{.Status}}{{end}}
+      </div>
       <div class="status-banner validation" id="validation-banner" aria-live="polite"></div>
+
+      <div class="status-banner review {{if .RejectComment}}show{{end}}" id="review-banner" aria-live="polite">
+        {{if .RejectComment}}Reason for Rejection: {{.RejectComment}}{{end}}
+      </div>
+
+      <script id="saved-schedule" type="application/json">{{.SavedJSON}}</script>
+
+
 
       <!-- 시간 그리드 헤더 -->
       <div class="week">
@@ -214,6 +268,97 @@
   const MAX_DAILY_MIN = 9 * 60;      // 하루 최대 9시간
   const MIN_WEEKLY_MIN = 20 * 60;    // 주 20시간
   const MAX_WEEKLY_MIN = 40 * 60;    // 주 40시간
+
+  let lastSubmittedJSON = null;   // 성공 제출된 페이로드 문자열
+  let lastValidationOK = false;   // 직전 검증 결과
+
+  // --- 편집 잠금 상태 제어 ---
+  let editingLocked = false;
+  function setLockedUI(lock) {
+    editingLocked = lock;
+    document.querySelectorAll('.day-row .hours')
+      .forEach(el => el.classList.toggle('locked', lock));
+  }
+  function isApprovedStatus() {
+    const banner = document.getElementById('status-banner');
+    const v = (banner?.dataset?.status || banner?.textContent || '').toLowerCase();
+    return v.includes('approved');
+  }
+
+  function readSavedSchedule() {
+    const el = document.getElementById('saved-schedule');
+    if (!el) return null;
+    const txt = (el.textContent || '').trim();
+    if (!txt) return null;
+    try { return JSON.parse(txt); } catch { return null; }
+  }
+
+  // ===== 서버 저장본으로 그리드 복원 =====
+  function hhmmToMinutes(str) {
+    const [h, m] = str.split(':').map(Number);
+    return h * 60 + m;
+  }
+  function hydrateFromSaved(saved) {
+    if (!saved || !saved.days) return;
+
+    // 요일 라벨 -> hours 엘리먼트를 빠르게 찾기
+    const dayMap = {};
+    document.querySelectorAll('.day-row').forEach((row) => {
+      const label = row.querySelector('.label')?.textContent?.trim();
+      const hoursEl = row.querySelector('.hours');
+      if (label && hoursEl) dayMap[label] = hoursEl;
+    });
+
+    // 각 요일의 interval을 10분 슬롯으로 펼쳐서 .slot 생성
+    saved.days.forEach((d) => {
+      const hoursEl = dayMap[d.day];
+      if (!hoursEl || !Array.isArray(d.intervals)) return;
+
+      d.intervals.forEach((seg) => {
+        const sMin = hhmmToMinutes(seg.start);
+        const eMin = hhmmToMinutes(seg.end);
+
+        // 08:00(480) 기준 10분 인덱스 [sIdx, eIdx)
+        let sIdx = Math.floor((sMin - DAY_START_MIN) / 10);
+        let eIdx = Math.floor((eMin - DAY_START_MIN) / 10);
+
+        // 범위 클램프
+        if (sIdx < 0) sIdx = 0;
+        if (sIdx > SLOTS_PER_DAY) sIdx = SLOTS_PER_DAY;
+        if (eIdx < 0) eIdx = 0;
+        if (eIdx > SLOTS_PER_DAY) eIdx = SLOTS_PER_DAY;
+
+        for (let idx = sIdx; idx < eIdx; idx++) {
+          // 이미 있으면 스킵
+          if (hoursEl.querySelector(`.slot[data-slot="${idx}"]`)) continue;
+          const slot = document.createElement('div');
+          slot.className = 'slot';
+          slot.dataset.slot = String(idx);
+          const widthPct = 100 / SLOTS_PER_DAY;
+          slot.style.left = (idx * widthPct) + '%';
+          slot.style.width = widthPct + '%';
+          hoursEl.appendChild(slot);
+        }
+      });
+    });
+  }
+
+  // ---- 서버 저장본 Hydrate (모든 바인딩/상수 초기화 후) ----
+  try {
+    const saved = readSavedSchedule();
+    if (saved) {
+      hydrateFromSaved(saved);
+      // 상태에 따른 baseline 설정:
+      const status = (document.getElementById('status-banner')?.dataset?.status || '').toLowerCase();
+      if (status.includes('approved') || status.includes('pending')) {
+        lastSubmittedJSON = JSON.stringify(saved); // 승인/대기 중인 서버 저장본을 기준선으로
+      }
+    }
+  } catch (e) {
+    console.error('hydrate failed:', e);
+  }
+
+
 
   const DAY_ROWS = Array.from(document.querySelectorAll('.day-row')); // Mon~Fri
   const TOTAL_ROWS = Array.from(document.querySelectorAll('.totals .list .row'));
@@ -326,40 +471,52 @@
     }
 
     if (hasShortShift) {
-      errors.push('Shift는 3시간 이상이어야 합니다.');
+      errors.push('A shift should be more than 3 hours.');
     }
     if (hasOverDailyMax) {
-      errors.push('하루 총 근무시간은 최대 9시간입니다.');
+      errors.push('A day\'s total working hours must not exceed 9 hours.');
     }
 
     // 주간 20~40시간
     if (schedule.weeklyTotalMinutes < MIN_WEEKLY_MIN || schedule.weeklyTotalMinutes > MAX_WEEKLY_MIN) {
-      errors.push(`Weekly Total: ${fmt(schedule.weeklyTotalMinutes)} (요구: ${fmt(MIN_WEEKLY_MIN)}–${fmt(MAX_WEEKLY_MIN)})`);
+      errors.push(`Weekly Total: ${fmt(schedule.weeklyTotalMinutes)} (Required Hours: ${fmt(MIN_WEEKLY_MIN)} – ${fmt(MAX_WEEKLY_MIN)})`);
     }
 
     return { ok: errors.length === 0, errors };
   }
 
   function showValidation(result) {
-  if (result.ok) {
-    // 내용 비우고 숨김(자리는 유지)
-    VALID_BANNER.textContent = '';
-    VALID_BANNER.classList.remove('show');
-    SUBMIT_BTN.disabled = false;
-  } else {
-    SUBMIT_BTN.disabled = true;
-    VALID_BANNER.textContent = 'Validation: ' + result.errors.slice(0, 2).join(' | ');
-    VALID_BANNER.classList.add('show');
-  }
+    lastValidationOK = result.ok; // 상태 보관
+
+    if (result.ok) {
+      VALID_BANNER.textContent = '';
+      VALID_BANNER.classList.remove('show');
+    } else {
+      VALID_BANNER.textContent = 'Validation: ' + result.errors.slice(0, 2).join(' | ');
+      VALID_BANNER.classList.add('show');
+    }
 }
 
   function refreshValidationAndPayload() {
     recalcTotals();
-    const schedule = buildSchedule();
-    JSON_INPUT.value = JSON.stringify(schedule);
-    const result = validateSchedule(schedule);
-    showValidation(result);
-    return result;
+  const schedule = buildSchedule();
+  const scheduleJSON = JSON.stringify(schedule);
+  JSON_INPUT.value = scheduleJSON;
+
+  const result = validateSchedule(schedule);
+  showValidation(result);
+
+  // --- 제출 가능 조건 계산 ---
+  const approved = isApprovedStatus();
+  const dirty = (lastSubmittedJSON === null) ? (scheduleJSON !== 'null' && scheduleJSON !== '{"days":[],"weeklyTotalMinutes":0}')
+                                            : (scheduleJSON !== lastSubmittedJSON);
+
+  // 조건: ① 검증 통과 ② Approved 아님 ③ dirty 해야 함
+  const canSubmit = result.ok && !approved && dirty;
+
+  SUBMIT_BTN.disabled = !canSubmit;
+
+  return result;
   }
 
   // ----- 슬롯 그리기/지우기(드래그 토글) -----
@@ -400,6 +557,7 @@
     let suppressNextClick = false;
 
     hoursEl.addEventListener('click', (ev) => {
+      if (editingLocked) return;
       if (suppressNextClick) {
         ev.preventDefault();
         ev.stopImmediatePropagation();
@@ -424,6 +582,7 @@
     };
 
     const onStart = (ev) => {
+      if (editingLocked) return;
       isDragging = true;
       dragMode = null;
       lastIndex = null;
@@ -466,41 +625,88 @@
 
   // ----- Reset 버튼 -----
   if (RESET_BTN) {
-    RESET_BTN.addEventListener('click', () => {
-      document.querySelectorAll('.day-row .hours .slot').forEach(el => el.remove());
-      refreshValidationAndPayload();
-    });
-  }
+  RESET_BTN.addEventListener('click', () => {
+    // 전부 지우기
+    document.querySelectorAll('.day-row .hours .slot').forEach(el => el.remove());
+
+    // 🔹 반려 사유 감추기
+    const rb = document.getElementById('review-banner');
+    if (rb) { rb.textContent = ''; rb.classList.remove('show'); }
+
+    // 🔹 잠금 해제
+    setLockedUI(false);
+
+    // 🔹 배너를 Draft 스타일로 되돌림(로컬 UI 갱신)
+    const banner = document.getElementById('status-banner');
+    if (banner) {
+      banner.textContent = 'Status: Draft';
+      banner.dataset.status = 'Draft';
+      banner.style.background = '#eef5ff';
+      banner.style.color = '#002E5D';
+    }
+
+    // 합계/검증 갱신
+    lastSubmittedJSON = null;
+    refreshValidationAndPayload();
+  });
+}
+
 
   // ----- Submit 처리 (프론트 검증 → 통과 시 HTMX 제출) -----
   if (FORM) {
     FORM.addEventListener('submit', (e) => {
-      const result = refreshValidationAndPayload();
-      if (!result.ok) {
-        // 제출 막고 에러 표시 유지
-        e.preventDefault();
-        e.stopPropagation();
-      }
-    });
+    const approved = isApprovedStatus();
+    const result = refreshValidationAndPayload();
+    if (approved || SUBMIT_BTN.disabled || !result.ok) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  });
   }
 
   // ----- HTMX 응답 후 상태배너 갱신 (200대면 Pending으로 표시) -----
   document.body.addEventListener('htmx:afterRequest', (e) => {
     const xhr = e.detail && e.detail.xhr;
-    if (xhr && xhr.status >= 200 && xhr.status < 300) {
-      const banner = document.getElementById('status-banner');
-      if (banner) {
-        banner.textContent = 'Status: Pending Approval';
-        banner.style.background = '#fff7e0';
-        banner.style.color = '#7a4b00';
-      }
-      // 제출 후 버튼 다시 비활성화(원하면 유지)
-      // SUBMIT_BTN.disabled = true;
+  if (xhr && xhr.status >= 200 && xhr.status < 300) {
+    const banner = document.getElementById('status-banner');
+    if (banner) {
+      banner.textContent = 'Status: Pending Approval';
+      banner.dataset.status = 'Pending';
     }
+
+    // 제출 직후 스냅샷 고정 → 변경 전까지 재제출 불가
+    const snap = buildSchedule();
+    lastSubmittedJSON = JSON.stringify(snap);
+
+    // 반려 배너 숨김
+    const rb = document.getElementById('review-banner');
+    if (rb) { rb.textContent = ''; rb.classList.remove('show'); }
+
+    // Pending이면 편집은 허용 (요구사항)
+    setLockedUI(false);
+
+    // 버튼 상태 재계산
+    refreshValidationAndPayload();
+  }
   });
+
+  // ---- 서버 저장본 Hydrate (모든 바인딩/상수 초기화 후) ----
+  try {
+    const saved = readSavedSchedule();
+    if (saved) {
+      hydrateFromSaved(saved);
+    }
+  } catch (e) {
+    console.error('hydrate failed:', e);
+  }
+
+  // 서버 상태가 Approved면 편집 잠금
+  setLockedUI(isApprovedStatus());
+
 
   // 초기 표시
   refreshValidationAndPayload();
+
 })();
 </script>
 

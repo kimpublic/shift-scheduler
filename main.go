@@ -3,11 +3,72 @@ package main
 import (
 	cryptoRand "crypto/rand"
 	"encoding/hex"
+	"encoding/json" // ★ 추가
+	"fmt"           // ★ 추가
 	"html/template"
 	"log"
 	"net/http"
+	"sort"    // ★ 추가
+	"strconv" // ★ 추가
+	"strings" // ★ 추가
 	"sync"
 	"time"
+)
+
+// ===== 스케줄 도메인 =====
+type Interval struct {
+	Start   string `json:"start"`   // "HH:MM"
+	End     string `json:"end"`     // "HH:MM"
+	Minutes int    `json:"minutes"` // 프론트 참고용, 서버에서 재계산
+}
+
+type Day struct {
+	Day          string     `json:"day"` // Mon~Fri
+	Intervals    []Interval `json:"intervals"`
+	TotalMinutes int        `json:"totalMinutes"`
+}
+
+type SchedulePayload struct {
+	Days               []Day `json:"days"`
+	WeeklyTotalMinutes int   `json:"weeklyTotalMinutes"`
+}
+
+type ScheduleStatus string
+
+const (
+	StatusDraft    ScheduleStatus = "Draft"
+	StatusPending  ScheduleStatus = "Pending"
+	StatusApproved ScheduleStatus = "Approved"
+	StatusRejected ScheduleStatus = "Rejected"
+	StatusExpired  ScheduleStatus = "Expired"
+)
+
+type ScheduleRecord struct {
+	ID          string
+	Version     int
+	User        string
+	Payload     SchedulePayload
+	Status      ScheduleStatus
+	Comment     string
+	SubmittedAt time.Time
+	ReviewedAt  *time.Time
+}
+
+// 인메모리 저장 (username -> record)
+var (
+	submissionsByID   = map[string]*ScheduleRecord{} // id -> record
+	userSubmissionIDs = map[string][]string{}        // user -> [id1,id2,...] (오래된 순서로 append)
+	userLatestID      = map[string]string{}          // user -> latest id
+	scMu              sync.Mutex
+)
+
+const (
+	MinShiftMin  = 3 * 60
+	MaxDailyMin  = 9 * 60
+	MinWeeklyMin = 20 * 60
+	MaxWeeklyMin = 40 * 60
+	DayStartMin  = 8 * 60  // 08:00
+	DayEndMin    = 18 * 60 // 18:00
 )
 
 type Session struct {
@@ -17,10 +78,241 @@ type Session struct {
 }
 
 var (
-	tmpl     = template.Must(template.ParseGlob("templates/*.html"))
+	funcMap = template.FuncMap{
+		"div": func(a, b int) int {
+			if b == 0 {
+				return 0
+			}
+			return a / b
+		},
+		"mod": func(a, b int) int {
+			if b == 0 {
+				return 0
+			}
+			return a % b
+		},
+	}
+
+	// ⬇︎ 변경: ParseGlob 전에 Funcs 등록
+	tmpl     = template.Must(template.New("all").Funcs(funcMap).ParseGlob("templates/*.html"))
 	sessions = map[string]Session{}
 	sMu      sync.Mutex
 )
+
+func parseHHMM(s string) (int, error) {
+	parts := strings.Split(s, ":")
+	if len(parts) != 2 {
+		return 0, fmt.Errorf("invalid time: %s", s)
+	}
+	h, err1 := strconv.Atoi(parts[0])
+	m, err2 := strconv.Atoi(parts[1])
+	if err1 != nil || err2 != nil || h < 0 || h > 23 || m < 0 || m > 59 {
+		return 0, fmt.Errorf("invalid time: %s", s)
+	}
+	return h*60 + m, nil
+}
+
+func validateServer(p SchedulePayload) (ok bool, messages []string, fixed SchedulePayload) {
+	weekly := 0
+	hasShort := false
+	hasOverDaily := false
+
+	// 서버에서 일일합/주합 재계산 & 범위 확인
+	for i, d := range p.Days {
+		dayTotal := 0
+		for _, seg := range d.Intervals {
+			s, err1 := parseHHMM(seg.Start)
+			e, err2 := parseHHMM(seg.End)
+			if err1 != nil || err2 != nil || e <= s {
+				return false, []string{"시간 형식이 올바르지 않습니다."}, p
+			}
+			if s < DayStartMin || e > DayEndMin {
+				return false, []string{"선택 시간은 08:00~18:00 범위여야 합니다."}, p
+			}
+			mins := e - s
+			dayTotal += mins
+			if mins < MinShiftMin {
+				hasShort = true
+			}
+		}
+		p.Days[i].TotalMinutes = dayTotal
+		weekly += dayTotal
+		if dayTotal > MaxDailyMin {
+			hasOverDaily = true
+		}
+	}
+	p.WeeklyTotalMinutes = weekly
+
+	// 프론트와 동일한 "축약" 메시지 정책
+	if hasShort {
+		messages = append(messages, "Shift는 3시간 이상이어야 합니다.")
+	}
+	if hasOverDaily {
+		messages = append(messages, "하루 총 근무시간은 최대 9시간입니다.")
+	}
+	if weekly < MinWeeklyMin || weekly > MaxWeeklyMin {
+		messages = append(messages,
+			fmt.Sprintf("Weekly Total: %dh %dm (요구: %dh %dm–%dh %dm)",
+				weekly/60, weekly%60, MinWeeklyMin/60, MinWeeklyMin%60, MaxWeeklyMin/60, MaxWeeklyMin%60))
+	}
+	return len(messages) == 0, messages, p
+}
+
+func newSubmissionID() string { return newSessionID() }
+
+// POST "/schedule/submit" : 학생 제출
+func scheduleSubmitHandler(w http.ResponseWriter, r *http.Request) {
+	s, ok := currentUser(w, r)
+	if !ok || s.Role != "student" {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	raw := r.FormValue("schedule_json")
+	var payload SchedulePayload
+	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+
+	ok2, msgs, fixed := validateServer(payload)
+	if !ok2 {
+		// 422 + validation-banner만 OOB로 업데이트, status는 Draft 유지
+		w.WriteHeader(422)
+		_, _ = fmt.Fprintf(w, `
+		<div class="status-banner" id="status-banner" data-status="Draft">Status: Draft</div>
+		<div id="validation-banner" class="status-banner validation show" hx-swap-oob="true">Validation: %s</div>`,
+			template.HTMLEscapeString(strings.Join(msgs, " | ")))
+		return
+
+	}
+
+	// 기존 Pending들을 Expired 처리 + 새 제출을 Pending으로 저장
+	scMu.Lock()
+	defer scMu.Unlock()
+
+	// 1) 해당 유저의 기존 Pending 모두 Expired
+	if ids := userSubmissionIDs[s.Username]; len(ids) > 0 {
+		expireTS := time.Now()
+		for _, oldID := range ids {
+			if old := submissionsByID[oldID]; old != nil && old.Status == StatusPending {
+				old.Status = StatusExpired
+				old.ReviewedAt = &expireTS
+			}
+		}
+	}
+
+	// 2) 새 제출 생성 (항상 새로운 버전으로 append)
+	id := newSubmissionID()
+	now := time.Now()
+	ver := len(userSubmissionIDs[s.Username]) + 1
+	rec := &ScheduleRecord{
+		ID:          id,
+		Version:     ver,
+		User:        s.Username,
+		Payload:     fixed,
+		Status:      StatusPending,
+		Comment:     "",
+		SubmittedAt: now,
+		ReviewedAt:  nil,
+	}
+	submissionsByID[id] = rec
+	userSubmissionIDs[s.Username] = append(userSubmissionIDs[s.Username], id)
+	userLatestID[s.Username] = id
+
+	// 성공 응답: status-banner 교체 + validation-banner 초기화(OOB)
+	_, _ = fmt.Fprintf(w, `
+	<div class="status-banner" id="status-banner" data-status="Pending">Status: Pending Approval</div>
+	<div id="validation-banner" class="status-banner validation" hx-swap-oob="true"></div>`)
+
+}
+
+// POST "/admin/approve"
+func adminApproveHandler(w http.ResponseWriter, r *http.Request) {
+	s, ok := currentUser(w, r)
+	if !ok || s.Role != "admin" {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	_ = r.ParseForm()
+	id := r.FormValue("id")
+	if id == "" {
+		http.Error(w, "missing id", http.StatusBadRequest)
+		return
+	}
+
+	scMu.Lock()
+	rec, exists := submissionsByID[id]
+	if !exists {
+		scMu.Unlock()
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	// Pending이 아니면 상태 변경 안 하고 409로 행만 갱신
+	if rec.Status != StatusPending {
+		scMu.Unlock()
+		w.WriteHeader(409)
+		_ = tmpl.ExecuteTemplate(w, "approval_row", rec)
+		return
+	}
+
+	now := time.Now()
+	rec.Status = StatusApproved
+	rec.ReviewedAt = &now
+	scMu.Unlock()
+
+	// 행 교체 → 상태 뱃지/버튼 비활성 자동 반영
+	_ = tmpl.ExecuteTemplate(w, "approval_row", rec)
+}
+
+// POST "/admin/reject"
+func adminRejectHandler(w http.ResponseWriter, r *http.Request) {
+	s, ok := currentUser(w, r)
+	if !ok || s.Role != "admin" {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	_ = r.ParseForm()
+	id := r.FormValue("id")
+	comment := strings.TrimSpace(r.FormValue("comment"))
+	if id == "" {
+		http.Error(w, "missing id", http.StatusBadRequest)
+		return
+	}
+
+	scMu.Lock()
+	rec, exists := submissionsByID[id]
+	if !exists {
+		scMu.Unlock()
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	// Pending이 아니면 상태 변경 안 하고 409
+	if rec.Status != StatusPending {
+		scMu.Unlock()
+		w.WriteHeader(409)
+		_ = tmpl.ExecuteTemplate(w, "approval_row", rec)
+		return
+	}
+	// 사유가 비면 422 (행 다시 그림)
+	if comment == "" {
+		scMu.Unlock()
+		w.WriteHeader(422)
+		_ = tmpl.ExecuteTemplate(w, "approval_row", rec)
+		return
+	}
+
+	now := time.Now()
+	rec.Status = StatusRejected
+	rec.Comment = comment
+	rec.ReviewedAt = &now
+	scMu.Unlock()
+
+	_ = tmpl.ExecuteTemplate(w, "approval_row", rec)
+}
 
 // 새 세션 ID 생성
 func newSessionID() string {
@@ -202,8 +494,33 @@ func scheduleHandler(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusFound)
 		return
 	}
+
+	// 기본값
+	status := "Draft"
+	var savedJSON template.JS = "null"
+	rejectComment := ""
+
+	scMu.Lock()
+	if latestID, ok := userLatestID[s.Username]; ok {
+		if rec := submissionsByID[latestID]; rec != nil {
+			status = string(rec.Status)
+			if b, err := json.Marshal(rec.Payload); err == nil {
+				savedJSON = template.JS(b)
+			}
+			if rec.Status == StatusRejected {
+				rejectComment = rec.Comment
+			}
+		}
+	}
+	scMu.Unlock()
+
 	render(w, "schedule.html", map[string]any{
-		"User": s.Username, "Role": s.Role, "Error": "",
+		"User":          s.Username,
+		"Role":          s.Role,
+		"Status":        status,
+		"SavedJSON":     savedJSON,
+		"RejectComment": rejectComment,
+		"Error":         "",
 	})
 }
 
@@ -219,8 +536,20 @@ func approvalHandler(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusFound)
 		return
 	}
+
+	// 최근 제출 순으로 정렬
+	list := []*ScheduleRecord{}
+	scMu.Lock()
+	for _, rec := range submissionsByID {
+		list = append(list, rec)
+	}
+	scMu.Unlock()
+	sort.Slice(list, func(i, j int) bool {
+		return list[i].SubmittedAt.After(list[j].SubmittedAt)
+	})
+
 	render(w, "approval.html", map[string]any{
-		"User": s.Username, "Role": s.Role, "Error": "",
+		"User": s.Username, "Role": s.Role, "Error": "", "Items": list,
 	})
 }
 
@@ -241,12 +570,14 @@ func startSessionGC() {
 }
 
 func render(w http.ResponseWriter, page string, data any) {
-	// page: "login.html", "schedule.html" 등
-	t := template.Must(template.ParseFiles(
-		"templates/base.html",
-		"templates/"+page,
-	))
-	// base.html 안의 {{block "content"}}에 page의 {{define "content"}}가 매핑됨
+	t := template.Must(
+		template.New("base").
+			Funcs(funcMap). // ⬅️ 추가
+			ParseFiles(
+				"templates/base.html",
+				"templates/"+page,
+			),
+	)
 	_ = t.ExecuteTemplate(w, "base.html", data)
 }
 
@@ -277,6 +608,28 @@ func main() {
 	})
 	http.HandleFunc("/schedule", scheduleHandler)
 	http.HandleFunc("/approval", approvalHandler)
+
+	http.HandleFunc("/schedule/submit", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			scheduleSubmitHandler(w, r)
+			return
+		}
+		http.NotFound(w, r)
+	})
+	http.HandleFunc("/admin/approve", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			adminApproveHandler(w, r)
+			return
+		}
+		http.NotFound(w, r)
+	})
+	http.HandleFunc("/admin/reject", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			adminRejectHandler(w, r)
+			return
+		}
+		http.NotFound(w, r)
+	})
 
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
 
